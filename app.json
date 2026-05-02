@@ -1,0 +1,34 @@
+{
+    "expo": {
+        "name": "GSO Mobile Scanner",
+        "slug": "gso-mobile-scanner",
+        "version": "1.0.0",
+        "orientation": "portrait",
+        "userInterfaceStyle": "light",
+        "assetBundlePatterns": [
+            "**/*"
+        ],
+        "ios": {
+            "infoPlist": {
+                "NSCameraUsageDescription": "This app uses your camera to scan QR codes for inventory tracking.",
+                "UIRequireAppTransport": false
+            }
+        },
+        "android": {
+            "permissions": [
+                "android.permission.CAMERA"
+            ]
+        },
+        "web": {},
+        "plugins": [
+            [
+                "expo-camera",
+                {
+                    "cameraPermission": "Allow GSO Mobile Scanner to access your camera to scan QR codes."
+                }
+            ],
+            "expo-font",
+            "expo-secure-store"
+        ]
+    }
+}

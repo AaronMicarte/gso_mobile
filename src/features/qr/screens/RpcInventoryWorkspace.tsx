@@ -1,0 +1,254 @@
+import React, { useCallback, useEffect, useState } from 'react';
+import {
+    ActivityIndicator,
+    Alert,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
+} from 'react-native';
+import { StatusBar } from 'expo-status-bar';
+import * as NavigationBar from 'expo-navigation-bar';
+import { useFocusEffect } from '@react-navigation/native';
+import { RpcCycle } from '../../../types';
+import { useAuth } from '../../auth/providers/AuthProvider';
+import ApiService from '../../shared/services/apiService';
+import { CycleSelectScreen } from './CycleSelectScreen';
+import ScannerScreen from './ScannerScreen';
+import { ScannedAssetsScreen } from './ScannedAssetsScreen';
+import { RpcInventoryReportScreen } from './RpcInventoryReportScreen';
+import { PropertyQrScreen } from './PropertyQrScreen';
+import { QrGenerateScreen } from './QrGenerateScreen';
+
+type TabType = 'cycles' | 'scanner' | 'assets' | 'report' | 'property-qr' | 'generate-qr';
+const REFRESH_INTERVAL_MS = 10000;
+
+interface RpcInventoryWorkspaceProps {
+    initialCycleId?: number;
+}
+
+export function RpcInventoryWorkspace({
+    initialCycleId,
+}: RpcInventoryWorkspaceProps): React.JSX.Element {
+    const { signOut } = useAuth();
+    const [selectedCycleId, setSelectedCycleId] = useState<number | null>(initialCycleId ?? null);
+    const [activeTab, setActiveTab] = useState<TabType>('cycles');
+    const [cycleInfo, setCycleInfo] = useState<RpcCycle | null>(null);
+    const [loadingCycles, setLoadingCycles] = useState(true);
+
+    useEffect(() => {
+        void NavigationBar.setVisibilityAsync('hidden');
+        void NavigationBar.setBehaviorAsync('overlay-swipe');
+
+        return () => {
+            void NavigationBar.setVisibilityAsync('visible');
+        };
+    }, []);
+
+    const refreshCycles = useCallback(async (): Promise<void> => {
+        setLoadingCycles(true);
+        try {
+            const response = await ApiService.listRpcInventoryCycles();
+            const cycles = response.data;
+
+            if (selectedCycleId) {
+                const refreshedSelected = cycles.find((cycle) => cycle.id === selectedCycleId) ?? null;
+                if (refreshedSelected) {
+                    setCycleInfo(refreshedSelected);
+                    return;
+                }
+            }
+
+            const fallbackCycle = cycles.find((cycle) => cycle.status === 'active') ?? cycles[0] ?? null;
+            const selectedCycle =
+                (initialCycleId ? cycles.find((cycle) => cycle.id === initialCycleId) : null) ?? fallbackCycle;
+
+            if (selectedCycle) {
+                setSelectedCycleId(selectedCycle.id);
+                setCycleInfo(selectedCycle);
+                setActiveTab('scanner');
+            } else {
+                setSelectedCycleId(null);
+                setCycleInfo(null);
+                setActiveTab('cycles');
+            }
+        } catch (error) {
+            console.error('Failed to load RPC cycles:', error);
+        } finally {
+            setLoadingCycles(false);
+        }
+    }, [initialCycleId, selectedCycleId]);
+
+    useEffect(() => {
+        void refreshCycles();
+    }, [refreshCycles]);
+
+    useFocusEffect(
+        useCallback(() => {
+            void refreshCycles();
+        }, [refreshCycles])
+    );
+
+    useEffect(() => {
+        if (!selectedCycleId) {
+            return;
+        }
+
+        const timer = setInterval(() => {
+            void refreshCycles();
+        }, REFRESH_INTERVAL_MS);
+
+        return () => clearInterval(timer);
+    }, [refreshCycles, selectedCycleId]);
+
+    const handleSelectCycle = (cycleId: number) => {
+        void ApiService.listRpcInventoryCycles()
+            .then((response) => {
+                const selectedCycle = response.data.find((cycle) => cycle.id === cycleId) ?? null;
+                setCycleInfo(selectedCycle);
+            })
+            .catch((error) => {
+                console.error('Failed to refresh selected cycle:', error);
+            });
+        setSelectedCycleId(cycleId);
+        setActiveTab('scanner');
+    };
+
+    const handleBackToCycles = () => {
+        setSelectedCycleId(null);
+        setCycleInfo(null);
+        setActiveTab('cycles');
+    };
+
+    if (loadingCycles && !selectedCycleId) {
+        return (
+            <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color="#2563EB" />
+                <Text style={styles.loadingText}>Loading RPC cycles...</Text>
+            </View>
+        );
+    }
+
+    if (!selectedCycleId) {
+        return <CycleSelectScreen onSelectCycle={handleSelectCycle} />;
+    }
+
+    return (
+        <View style={styles.container}>
+            <StatusBar hidden />
+            {/* Header */}
+            <View style={styles.header}>
+                <View style={styles.headerContent}>
+                    <TouchableOpacity onPress={handleBackToCycles} style={styles.backButton}>
+                        <Text style={styles.backButtonText}>← Back</Text>
+                    </TouchableOpacity>
+                    <View>
+                        <Text style={styles.headerTitle}>RPCPPE / RPCSEP Workspace</Text>
+                        {cycleInfo && (
+                            <Text style={styles.headerSubtitle}>{cycleInfo.cycle_label}</Text>
+                        )}
+                    </View>
+                    <TouchableOpacity
+                        style={styles.logoutButton}
+                        onPress={() => {
+                            Alert.alert('Log out', 'Clear the saved session and return to the login screen?', [
+                                { text: 'Cancel', style: 'cancel' },
+                                {
+                                    text: 'Log out',
+                                    style: 'destructive',
+                                    onPress: () => {
+                                        void signOut();
+                                    },
+                                },
+                            ]);
+                        }}
+                    >
+                        <Text style={styles.logoutButtonText}>Logout</Text>
+                    </TouchableOpacity>
+                </View>
+                <View style={styles.stats}>
+                    <View style={styles.statItem}>
+                        <Text style={styles.statLabel}>TOTAL</Text>
+                        <Text style={styles.statValue}>{cycleInfo?.scans_count ?? 0}</Text>
+                    </View>
+                    <View style={styles.statItem}>
+                        <Text style={styles.statLabel}>RPCPPE</Text>
+                        <Text style={styles.statValue}>{cycleInfo?.rpcppe_count ?? 0}</Text>
+                    </View>
+                    <View style={styles.statItem}>
+                        <Text style={styles.statLabel}>RPCSEP</Text>
+                        <Text style={styles.statValue}>{cycleInfo?.rpcsep_count ?? 0}</Text>
+                    </View>
+                </View>
+            </View>
+
+            {/* Content */}
+            <View style={styles.content}>
+                {activeTab === 'scanner' && (
+                    <ScannerScreen cycleId={selectedCycleId} />
+                )}
+                {activeTab === 'assets' && (
+                    <ScannedAssetsScreen cycleId={selectedCycleId} />
+                )}
+                {activeTab === 'report' && (
+                    <RpcInventoryReportScreen cycleId={selectedCycleId} />
+                )}
+                {activeTab === 'property-qr' && (
+                    <PropertyQrScreen />
+                )}
+                {activeTab === 'generate-qr' && (
+                    <QrGenerateScreen />
+                )}
+            </View>
+
+            {/* Tabs */}
+            <View style={styles.bottomDock}>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabScroll}>
+                    {[
+                        { key: 'scanner', label: 'Scanner' },
+                        { key: 'assets', label: 'Scanned Assets' },
+                        { key: 'report', label: 'Report' },
+                        { key: 'property-qr', label: 'Property QR' },
+                        { key: 'generate-qr', label: 'Generate QR' },
+                    ].map((tab) => (
+                        <TouchableOpacity
+                            key={tab.key}
+                            style={[styles.tab, activeTab === tab.key && styles.tabActive]}
+                            onPress={() => setActiveTab(tab.key as TabType)}
+                        >
+                            <Text style={[styles.tabText, activeTab === tab.key && styles.tabTextActive]}>
+                                {tab.label}
+                            </Text>
+                        </TouchableOpacity>
+                    ))}
+                </ScrollView>
+            </View>
+        </View>
+    );
+}
+
+const styles = StyleSheet.create({
+    container: { flex: 1, backgroundColor: '#f8fafc' },
+    header: { backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#e2e8f0', paddingHorizontal: 16, paddingTop: 12, paddingBottom: 16 },
+    headerContent: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
+    backButton: { paddingRight: 12 },
+    backButtonText: { fontSize: 14, fontWeight: '600', color: '#2563EB' },
+    headerTitle: { fontSize: 18, fontWeight: '700', color: '#0f172a' },
+    headerSubtitle: { fontSize: 12, color: '#64748b', marginTop: 2 },
+    logoutButton: { marginLeft: 'auto', borderRadius: 999, backgroundColor: '#fee2e2', paddingHorizontal: 12, paddingVertical: 8 },
+    logoutButtonText: { color: '#b91c1c', fontSize: 12, fontWeight: '800' },
+    stats: { flexDirection: 'row', justifyContent: 'space-around', paddingTop: 12, borderTopWidth: 1, borderTopColor: '#e2e8f0' },
+    statItem: { alignItems: 'center' },
+    statLabel: { fontSize: 10, color: '#64748b', textTransform: 'uppercase', fontWeight: '600' },
+    statValue: { fontSize: 20, fontWeight: '900', color: '#2563EB', marginTop: 4 },
+    bottomDock: { backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: '#e2e8f0' },
+    tabScroll: { flexDirection: 'row' },
+    tab: { paddingVertical: 12, paddingHorizontal: 16, alignItems: 'center', borderTopWidth: 2, borderTopColor: 'transparent' },
+    tabActive: { borderTopColor: '#2563EB' },
+    tabText: { fontSize: 14, fontWeight: '600', color: '#64748b' },
+    tabTextActive: { color: '#2563EB' },
+    content: { flex: 1 },
+    loadingContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#f8fafc' },
+    loadingText: { marginTop: 12, color: '#64748b', fontWeight: '600' },
+});
