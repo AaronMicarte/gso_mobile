@@ -33,15 +33,21 @@ function QueueScreen(): React.JSX.Element {
 
   async function loadScans(): Promise<void> {
     try {
+
+      if (cycleId) {
+        const removed = await ScanQueueService.reconcileSyncedScans(cycleId);
+      }
+
       const [allScans, queueStats] = await Promise.all([
         ScanQueueService.getAllScans(cycleId),
         ScanQueueService.getQueueStats(cycleId),
       ]);
 
+
       setScans(allScans);
       setStats(queueStats);
     } catch (error) {
-      console.error('Failed to load scans:', error);
+      console.error('[QueueScreen] Failed to load scans:', error);
     }
   }
 

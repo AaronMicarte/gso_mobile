@@ -38,8 +38,15 @@ export function RpcInventoryWorkspace({
     const [loadingCycles, setLoadingCycles] = useState(true);
 
     useEffect(() => {
-        void NavigationBar.setVisibilityAsync('hidden');
-        void NavigationBar.setBehaviorAsync('overlay-swipe');
+        // Hide the navigation bar on supported platforms. Avoid calling
+        // `setBehaviorAsync` — it's deprecated / unsupported when
+        // Android edge-to-edge is enabled and causes noisy warnings.
+        try {
+            void NavigationBar.setVisibilityAsync('hidden');
+        } catch (e) {
+            // ignore errors setting navigation bar visibility in edge cases
+            console.debug('NavigationBar.setVisibilityAsync failed:', e);
+        }
 
         return () => {
             void NavigationBar.setVisibilityAsync('visible');
@@ -75,6 +82,19 @@ export function RpcInventoryWorkspace({
             }
         } catch (error) {
             console.error('Failed to load RPC cycles:', error);
+            // Provide a clearer hint when network errors occur (common on devices/emulators)
+            // so developers/users can check their `EXPO_PUBLIC_API_URL` and network.
+            // Avoid using too many alerts in prod — this helps local dev debugging.
+            // Normalize the caught error to `any` so we can inspect `message` safely.
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const errAny: any = error;
+            const isNetwork = (errAny && errAny.message && String(errAny.message).toLowerCase().includes('network')) || false;
+            if (isNetwork) {
+                Alert.alert(
+                    'Network Error',
+                    'Failed to reach backend API. Check EXPO_PUBLIC_API_URL in .env.local and ensure the device/emulator can reach your machine.'
+                );
+            }
         } finally {
             setLoadingCycles(false);
         }

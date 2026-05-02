@@ -104,12 +104,19 @@ class ApiService {
     await SecureStore.deleteItemAsync('auth_token');
   }
 
-  async previewScan(cycleId: number, qrValue: string): Promise<PreviewScanResponse> {
+  async previewScan(
+    cycleId: number,
+    qrValue: string,
+    opts?: { property_number?: string; property_id?: number; inventory_detail_id?: number }
+  ): Promise<PreviewScanResponse> {
+    const payload: Record<string, unknown> = { qr_value: qrValue };
+    if (opts?.property_number) payload.property_number = opts.property_number;
+    if (typeof opts?.property_id === 'number') payload.property_id = opts.property_id;
+    if (typeof opts?.inventory_detail_id === 'number') payload.inventory_detail_id = opts.inventory_detail_id;
+
     const response = await this.api.post<PreviewScanResponse>(
       `/rpc-inventory/cycles/${cycleId}/scan-preview`,
-      {
-        qr_value: qrValue,
-      }
+      payload
     );
     return response.data;
   }

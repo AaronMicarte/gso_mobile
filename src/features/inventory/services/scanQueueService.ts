@@ -1,4 +1,5 @@
 import { openDatabaseAsync } from '../../../lib/sqlite';
+import ApiService from '../../shared/services/apiService';
 import { LocalScan } from '../../../types';
 
 const DB_NAME = 'gso_scan_queue.db';
@@ -281,6 +282,66 @@ class ScanQueueService {
             `UPDATE scan_queue SET status = 'failed', error_message = ?, last_attempt_at = ? WHERE client_uuid = ?`,
             [errorMessage, now, clientUuid]
         );
+    }
+
+    async reconcileSyncedScans(cycleId: number): Promise<number> {
+        if (!this.db) throw new Error('Database not initialized');
+
+        try {
+            const remoteDetailIds = await this.fetchRemoteInventoryDetailIds(cycleId);
+            const syncedScans = await this.getAllScans(cycleId);
+            let removed = 0;
+
+            const syncedOnly = syncedScans.filter((s) => s.status === 'synced');
+
+            // Delete stale synced scans and collect them
+            const toDelete = [];
+            for (const scan of syncedOnly) {
+                const isRemote = remoteDetailIds.has(scan.inventory_detail_id);
+
+                if (!isRemote) {
+
+                    toDelete.push(scan.client_uuid);
+                }
+            }
+
+            // Execute all deletes in parallel, with a tiny delay to ensure DB flush
+            if (toDelete.length > 0) {
+
+                await Promise.all(toDelete.map((uuid) => this.deleteScan(uuid)));
+                // Small delay to ensure SQLite writes are persisted
+                await new Promise((r) => setTimeout(r, 50));
+                removed = toDelete.length;
+            } else {
+            }
+
+            return removed;
+        } catch (error) {
+            console.error('[Reconcile] Error during reconciliation:', error);
+            return 0;
+        }
+    }
+
+    private async fetchRemoteInventoryDetailIds(cycleId: number): Promise<Set<number>> {
+        const inventoryDetailIds = new Set<number>();
+        let page = 1;
+        let lastPage = 1;
+
+        do {
+            const response = await ApiService.getRpcInventoryCycleScans(cycleId, {
+                page,
+                per_page: 100,
+            });
+
+            for (const scan of response.data) {
+                inventoryDetailIds.add(scan.inventory_detail_id);
+            }
+
+            lastPage = response.last_page || 1;
+            page += 1;
+        } while (page <= lastPage);
+
+        return inventoryDetailIds;
     }
 
     async getQueueStats(cycleId?: number): Promise<QueueStats> {

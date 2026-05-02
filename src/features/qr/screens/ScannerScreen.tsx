@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -32,12 +32,15 @@ export default function ScannerScreen({ cycleId }: ScannerScreenProps): React.JS
     selectedInventoryDetailIds,
     setSelectedInventoryDetailIds,
     onBarcodeScanned,
+    previewManual,
     setSelectedCondition,
     setRemarks,
     resetScan,
     confirmScan,
     refreshScanner,
   } = useScanner(cycleId);
+
+  const [manualInput, setManualInput] = useState('');
 
   if (hasPermission === null) {
     return (
@@ -95,6 +98,32 @@ export default function ScannerScreen({ cycleId }: ScannerScreenProps): React.JS
         </View>
 
         <View style={styles.footerBar}>
+          <View style={styles.manualRow}>
+            <TextInput
+              style={styles.manualInput}
+              placeholder="Enter property number or QR value"
+              placeholderTextColor="#cbd5e1"
+              value={manualInput}
+              onChangeText={setManualInput}
+              returnKeyType="done"
+            />
+            <TouchableOpacity
+              style={[styles.footerButton, styles.primaryButton, { flex: 0.48 }]}
+              onPress={() => {
+                const value = manualInput.trim();
+                if (!value) {
+                  Alert.alert('Validation', 'Please enter a property number or QR value');
+                  return;
+                }
+                void previewManual(value).catch((err: unknown) => {
+                  console.error('Manual preview error:', err);
+                });
+              }}
+              disabled={loading}
+            >
+              <Text style={styles.primaryButtonText}>Preview</Text>
+            </TouchableOpacity>
+          </View>
           <View style={styles.footerRow}>
             <TouchableOpacity style={[styles.footerButton, styles.secondaryButton]} onPress={() => void refreshScanner()} disabled={loading}>
               <Text style={styles.secondaryButtonText}>Refresh</Text>
@@ -268,6 +297,8 @@ const styles = StyleSheet.create({
   previewCornerBottomRight: { position: 'absolute', right: 16, bottom: 16, width: 28, height: 28, borderRightWidth: 3, borderBottomWidth: 3, borderColor: '#93c5fd', borderBottomRightRadius: 12 },
   footerBar: { borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.08)', backgroundColor: 'rgba(15,23,42,0.88)', paddingHorizontal: 16, paddingTop: 12, paddingBottom: 20 },
   footerRow: { flexDirection: 'row', gap: 12 },
+  manualRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, marginBottom: 8 },
+  manualInput: { flex: 1, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)', paddingHorizontal: 12, paddingVertical: 10, color: '#fff', backgroundColor: 'rgba(255,255,255,0.04)' },
   footerButton: { flex: 1, borderRadius: 14, paddingVertical: 12, paddingHorizontal: 12, alignItems: 'center' },
   secondaryButton: { backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)' },
   secondaryButtonText: { color: '#fff', fontWeight: '700' },

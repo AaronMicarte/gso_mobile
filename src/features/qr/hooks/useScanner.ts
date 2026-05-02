@@ -23,6 +23,7 @@ interface UseScannerResult {
     remarks: string;
     requestCameraPermission: () => Promise<void>;
     onBarcodeScanned: (result: BarcodeScanningResult) => Promise<void>;
+    previewManual: (qrValue: string) => Promise<void>;
     selectedInventoryDetailIds: number[];
     setSelectedInventoryDetailIds: (ids: number[]) => void;
     setSelectedCondition: (conditionId: number | null) => void;
@@ -49,6 +50,9 @@ export function useScanner(cycleId: number): UseScannerResult {
 
     const updateQueueStats = useCallback(async () => {
         try {
+            if (cycleId) {
+                await ScanQueueService.reconcileSyncedScans(cycleId);
+            }
             const stats = await ScanQueueService.getQueueStats(cycleId);
             setQueueStats(stats);
         } catch (error) {
@@ -113,6 +117,46 @@ export function useScanner(cycleId: number): UseScannerResult {
         } catch (error) {
             // Surface backend response when available so user sees why preview failed
             console.error('Failed to preview scan:', error);
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const err: any = error;
+            if (err && err.response) {
+                const status = err.response.status;
+                const message = (err.response.data && err.response.data.message) || `Request failed with status code ${status}`;
+                Alert.alert('Preview failed', message);
+            } else if (err && err.message) {
+                Alert.alert('Preview failed', err.message);
+            } else {
+                Alert.alert('Preview failed', 'Unable to preview scan. Check network or server.');
+            }
+            setScanned(false);
+        } finally {
+            setLoading(false);
+        }
+    }
+
+    async function previewManual(qrValue: string): Promise<void> {
+        if (scanned || !cycleId) return;
+
+        setScanned(true);
+        setLoading(true);
+
+        try {
+            console.debug('[useScanner] previewScan (manual) request', { cycleId, qr_value: qrValue });
+            const response = await ApiService.previewScan(cycleId, qrValue, { property_number: qrValue });
+            const unscannedIds = response.candidates.filter((candidate) => !candidate.is_scanned).map((candidate) => candidate.inventory_detail_id);
+            const defaultSelection = unscannedIds.includes(response.asset.inventory_detail_id)
+                ? [response.asset.inventory_detail_id]
+                : (unscannedIds[0] ? [unscannedIds[0]] : []);
+
+            setPreview({
+                qr_value: qrValue,
+                cycle_id: cycleId,
+                ...response,
+            });
+            setSelectedInventoryDetailIds(defaultSelection);
+            setSelectedCondition((current) => current ?? conditions[0]?.ConditionID ?? null);
+        } catch (error) {
+            console.error('Failed to preview scan (manual):', error);
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const err: any = error;
             if (err && err.response) {
@@ -202,5 +246,6 @@ export function useScanner(cycleId: number): UseScannerResult {
         resetScan,
         confirmScan,
         refreshScanner,
+        previewManual,
     };
 }
