@@ -33,13 +33,13 @@ export function AssetDetailCard({
 }
 
 const styles = StyleSheet.create({
-  card: { borderRadius: 16, borderWidth: 1, borderColor: '#e6e7ea', backgroundColor: '#fff', padding: 16, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 3 },
+  card: { borderRadius: 16, borderWidth: 1, borderColor: '#263552', backgroundColor: '#0b1220', padding: 16 },
   header: { marginBottom: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  assetType: { fontSize: 12, fontWeight: '700', letterSpacing: 1.6, color: '#b45309' },
-  badge: { borderRadius: 999, backgroundColor: '#f1f5f9', paddingHorizontal: 12, paddingVertical: 4 },
-  badgeText: { fontSize: 12, fontWeight: '500', color: '#475569' },
-  title: { fontSize: 18, fontWeight: '700', color: '#0f172a' },
-  subtitle: { marginTop: 4, fontSize: 14, color: '#475569' },
-  code: { marginTop: 12, fontSize: 14, fontWeight: '600', color: '#3f3f46' },
-  description: { marginTop: 4, fontSize: 14, color: '#71717a' },
+  assetType: { fontSize: 12, fontWeight: '700', letterSpacing: 1.6, color: '#93c5fd' },
+  badge: { borderRadius: 999, backgroundColor: '#1e293b', paddingHorizontal: 12, paddingVertical: 4, borderWidth: 1, borderColor: '#334463' },
+  badgeText: { fontSize: 12, fontWeight: '600', color: '#c5d5ef' },
+  title: { fontSize: 18, fontWeight: '700', color: '#f8fafc' },
+  subtitle: { marginTop: 4, fontSize: 14, color: '#c5d5ef' },
+  code: { marginTop: 12, fontSize: 14, fontWeight: '700', color: '#dbe7ff' },
+  description: { marginTop: 4, fontSize: 13, color: '#9bb0d2' },
 });

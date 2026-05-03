@@ -27,6 +27,13 @@
                     "cameraPermission": "Allow GSO Mobile Scanner to access your camera to scan QR codes."
                 }
             ],
+            [
+                "expo-navigation-bar",
+                {
+                    "visibility": "hidden",
+                    "barStyle": "light"
+                }
+            ],
             "expo-font",
             "expo-secure-store"
         ]

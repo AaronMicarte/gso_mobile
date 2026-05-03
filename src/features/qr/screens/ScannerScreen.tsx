@@ -10,6 +10,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { MaterialIcons } from '@expo/vector-icons';
 import { CameraView } from 'expo-camera';
 import { useScanner } from '../hooks/useScanner';
 import { AssetDetailCard } from '../../inventory/components/AssetDetailCard';
@@ -17,16 +18,20 @@ import type { ScanCandidate } from '../../../types';
 
 interface ScannerScreenProps {
   cycleId: number;
+  cycleTotals?: {
+    total: number;
+    rpcppe: number;
+    rpcsep: number;
+  };
 }
 
-export default function ScannerScreen({ cycleId }: ScannerScreenProps): React.JSX.Element {
+export default function ScannerScreen({ cycleId, cycleTotals }: ScannerScreenProps): React.JSX.Element {
   const {
     hasPermission,
     scanned,
     loading,
     preview,
     conditions,
-    queueStats,
     selectedCondition,
     remarks,
     selectedInventoryDetailIds,
@@ -41,6 +46,7 @@ export default function ScannerScreen({ cycleId }: ScannerScreenProps): React.JS
   } = useScanner(cycleId);
 
   const [manualInput, setManualInput] = useState('');
+  const [manualModalVisible, setManualModalVisible] = useState(false);
 
   if (hasPermission === null) {
     return (
@@ -68,22 +74,22 @@ export default function ScannerScreen({ cycleId }: ScannerScreenProps): React.JS
 
       <View style={styles.overlay}>
         <View style={styles.headerCard}>
-          <View>
+          <View style={styles.headerTextBlock}>
             <Text style={styles.headerTitle}>QR Scanner</Text>
-            <Text style={styles.headerSubtitle}>Minimal, guided scanning for inventory checks</Text>
+            <Text style={styles.headerSubtitle}>Scan first. Manual entry is secondary.</Text>
           </View>
           <View style={styles.queuePills}>
             <View style={styles.queuePill}>
-              <Text style={styles.queuePillLabel}>Queue</Text>
-              <Text style={styles.queuePillValue}>{queueStats.total}</Text>
+              <Text style={styles.queuePillLabel}>Total</Text>
+              <Text style={styles.queuePillValue}>{cycleTotals?.total ?? 0}</Text>
             </View>
             <View style={styles.queuePill}>
-              <Text style={styles.queuePillLabel}>Synced</Text>
-              <Text style={[styles.queuePillValue, styles.queuePillSuccess]}>{queueStats.synced}</Text>
+              <Text style={styles.queuePillLabel}>RPCPPE</Text>
+              <Text style={[styles.queuePillValue, styles.queuePillSuccess]}>{cycleTotals?.rpcppe ?? 0}</Text>
             </View>
             <View style={styles.queuePill}>
-              <Text style={styles.queuePillLabel}>Failed</Text>
-              <Text style={[styles.queuePillValue, styles.queuePillDanger]}>{queueStats.failed}</Text>
+              <Text style={styles.queuePillLabel}>RPCSEP</Text>
+              <Text style={[styles.queuePillValue, styles.queuePillDanger]}>{cycleTotals?.rpcsep ?? 0}</Text>
             </View>
           </View>
         </View>
@@ -98,42 +104,67 @@ export default function ScannerScreen({ cycleId }: ScannerScreenProps): React.JS
         </View>
 
         <View style={styles.footerBar}>
-          <View style={styles.manualRow}>
-            <TextInput
-              style={styles.manualInput}
-              placeholder="Enter property number or QR value"
-              placeholderTextColor="#cbd5e1"
-              value={manualInput}
-              onChangeText={setManualInput}
-              returnKeyType="done"
-            />
+          <View style={styles.footerRow}>
+            <TouchableOpacity style={[styles.iconRefreshButton, styles.secondaryButton]} onPress={() => void refreshScanner()} disabled={loading}>
+              <MaterialIcons name="refresh" size={20} color="#ffffff" />
+            </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.footerButton, styles.primaryButton, { flex: 0.48 }]}
-              onPress={() => {
-                const value = manualInput.trim();
-                if (!value) {
-                  Alert.alert('Validation', 'Please enter a property number or QR value');
-                  return;
-                }
-                void previewManual(value).catch((err: unknown) => {
-                  console.error('Manual preview error:', err);
-                });
-              }}
+              style={[styles.footerButton, styles.secondaryButton]}
+              onPress={() => setManualModalVisible(true)}
               disabled={loading}
             >
-              <Text style={styles.primaryButtonText}>Preview</Text>
-            </TouchableOpacity>
-          </View>
-          <View style={styles.footerRow}>
-            <TouchableOpacity style={[styles.footerButton, styles.secondaryButton]} onPress={() => void refreshScanner()} disabled={loading}>
-              <Text style={styles.secondaryButtonText}>Refresh</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.footerButton, styles.primaryButton]} onPress={resetScan} disabled={loading}>
-              <Text style={styles.primaryButtonText}>Resume Scan</Text>
+              <Text style={styles.secondaryButtonText}>Manual Input</Text>
             </TouchableOpacity>
           </View>
         </View>
       </View>
+
+      <Modal visible={manualModalVisible} transparent animationType="slide" onRequestClose={() => setManualModalVisible(false)}>
+        <View style={styles.manualModalOverlay}>
+          <View style={styles.manualModalCard}>
+            <View style={styles.sheetHandle} />
+            <Text style={styles.confirmTitle}>Manual Input</Text>
+            <Text style={styles.confirmSubtitle}>Enter a property number or QR value to preview the item.</Text>
+
+            <TextInput
+              style={styles.manualModalInput}
+              placeholder="Enter property number"
+              placeholderTextColor="#94a3b8"
+              value={manualInput}
+              onChangeText={setManualInput}
+              autoCapitalize="none"
+              autoCorrect={false}
+              returnKeyType="done"
+            />
+
+            <View style={styles.manualModalActions}>
+              <TouchableOpacity style={[styles.actionButton, styles.cancelButton]} onPress={() => setManualModalVisible(false)} disabled={loading}>
+                <Text style={styles.actionButtonText}>Close</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.actionButton, styles.confirmButton]}
+                onPress={() => {
+                  const value = manualInput.trim();
+                  if (!value) {
+                    Alert.alert('Validation', 'Please enter a property number');
+                    return;
+                  }
+                  void previewManual(value)
+                    .catch((err: unknown) => {
+                      console.error('Manual preview error:', err);
+                    })
+                    .finally(() => {
+                      setManualModalVisible(false);
+                    });
+                }}
+                disabled={loading}
+              >
+                <Text style={styles.actionButtonText}>Preview</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       <Modal visible={!!preview} transparent animationType="slide" onRequestClose={resetScan}>
         <View style={styles.modalOverlay}>
@@ -276,64 +307,68 @@ export default function ScannerScreen({ cycleId }: ScannerScreenProps): React.JS
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0f172a' },
-  centered: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16, backgroundColor: '#0f172a' },
+  container: { flex: 1, backgroundColor: '#0b1220' },
+  centered: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16, backgroundColor: '#0b1220' },
   infoText: { fontSize: 16, color: '#f8fafc' },
-  overlay: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, justifyContent: 'space-between', backgroundColor: 'rgba(15,23,42,0.28)' },
-  headerCard: { marginTop: 44, marginHorizontal: 16, borderRadius: 24, borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)', backgroundColor: 'rgba(15,23,42,0.84)', padding: 16, gap: 12 },
+  overlay: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, justifyContent: 'space-between', backgroundColor: 'rgba(11,18,32,0.3)' },
+  headerCard: { marginTop: 12, marginHorizontal: 16, borderRadius: 24, borderWidth: 1, borderColor: '#334463', backgroundColor: 'rgba(17,26,45,0.9)', padding: 14, gap: 10 },
+  headerTextBlock: { gap: 2 },
   headerTitle: { fontSize: 18, fontWeight: '800', color: '#fff' },
-  headerSubtitle: { marginTop: 4, fontSize: 13, color: '#cbd5e1' },
-  queuePills: { flexDirection: 'row', gap: 8 },
-  queuePill: { flex: 1, borderRadius: 14, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', backgroundColor: 'rgba(255,255,255,0.06)', paddingVertical: 10, paddingHorizontal: 10, alignItems: 'center' },
-  queuePillLabel: { fontSize: 10, fontWeight: '700', letterSpacing: 0.6, color: '#cbd5e1', textTransform: 'uppercase' },
-  queuePillValue: { marginTop: 3, fontSize: 18, fontWeight: '800', color: '#fff' },
+  headerSubtitle: { marginTop: 4, fontSize: 13, color: '#9bb0d2' },
+  queuePills: { flexDirection: 'row', gap: 6 },
+  queuePill: { flex: 1, borderRadius: 14, borderWidth: 1, borderColor: '#334463', backgroundColor: '#0b1220', paddingVertical: 8, paddingHorizontal: 8, alignItems: 'center' },
+  queuePillLabel: { fontSize: 10, fontWeight: '700', letterSpacing: 0.6, color: '#8aa0c5', textTransform: 'uppercase' },
+  queuePillValue: { marginTop: 2, fontSize: 16, fontWeight: '800', color: '#fff' },
   queuePillSuccess: { color: '#34d399' },
   queuePillDanger: { color: '#fb7185' },
-  centerPreview: { alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16 },
-  previewFrame: { height: 196, width: 196, borderRadius: 32, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.26)', backgroundColor: 'rgba(255,255,255,0.04)', alignItems: 'center', justifyContent: 'center' },
-  previewCornerTopLeft: { position: 'absolute', left: 16, top: 16, width: 28, height: 28, borderLeftWidth: 3, borderTopWidth: 3, borderColor: '#93c5fd', borderTopLeftRadius: 12 },
-  previewCornerTopRight: { position: 'absolute', right: 16, top: 16, width: 28, height: 28, borderRightWidth: 3, borderTopWidth: 3, borderColor: '#93c5fd', borderTopRightRadius: 12 },
-  previewCornerBottomLeft: { position: 'absolute', left: 16, bottom: 16, width: 28, height: 28, borderLeftWidth: 3, borderBottomWidth: 3, borderColor: '#93c5fd', borderBottomLeftRadius: 12 },
-  previewCornerBottomRight: { position: 'absolute', right: 16, bottom: 16, width: 28, height: 28, borderRightWidth: 3, borderBottomWidth: 3, borderColor: '#93c5fd', borderBottomRightRadius: 12 },
-  footerBar: { borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.08)', backgroundColor: 'rgba(15,23,42,0.88)', paddingHorizontal: 16, paddingTop: 12, paddingBottom: 20 },
-  footerRow: { flexDirection: 'row', gap: 12 },
-  manualRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, marginBottom: 8 },
-  manualInput: { flex: 1, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)', paddingHorizontal: 12, paddingVertical: 10, color: '#fff', backgroundColor: 'rgba(255,255,255,0.04)' },
+  centerPreview: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16 },
+  previewFrame: { height: 216, width: 216, borderRadius: 36, borderWidth: 1.5, borderColor: '#5b7cb2', backgroundColor: 'rgba(15,23,42,0.35)', alignItems: 'center', justifyContent: 'center' },
+  previewCornerTopLeft: { position: 'absolute', left: 16, top: 16, width: 28, height: 28, borderLeftWidth: 3, borderTopWidth: 3, borderColor: '#60a5fa', borderTopLeftRadius: 12 },
+  previewCornerTopRight: { position: 'absolute', right: 16, top: 16, width: 28, height: 28, borderRightWidth: 3, borderTopWidth: 3, borderColor: '#60a5fa', borderTopRightRadius: 12 },
+  previewCornerBottomLeft: { position: 'absolute', left: 16, bottom: 16, width: 28, height: 28, borderLeftWidth: 3, borderBottomWidth: 3, borderColor: '#60a5fa', borderBottomLeftRadius: 12 },
+  previewCornerBottomRight: { position: 'absolute', right: 16, bottom: 16, width: 28, height: 28, borderRightWidth: 3, borderBottomWidth: 3, borderColor: '#60a5fa', borderBottomRightRadius: 12 },
+  footerBar: { borderTopWidth: 1, borderTopColor: '#263552', backgroundColor: 'rgba(17,26,45,0.94)', paddingHorizontal: 16, paddingTop: 12, paddingBottom: 20 },
+  footerRow: { flexDirection: 'row', gap: 10 },
   footerButton: { flex: 1, borderRadius: 14, paddingVertical: 12, paddingHorizontal: 12, alignItems: 'center' },
-  secondaryButton: { backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)' },
+  iconRefreshButton: { width: 52, minWidth: 52, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  secondaryButton: { backgroundColor: '#0b1220', borderWidth: 1, borderColor: '#334463' },
   secondaryButtonText: { color: '#fff', fontWeight: '700' },
   primaryButton: { backgroundColor: '#2563EB' },
   primaryButtonText: { color: '#fff', fontWeight: '700' },
+  manualModalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.62)' },
+  manualModalCard: { borderTopLeftRadius: 28, borderTopRightRadius: 28, backgroundColor: '#111a2d', borderTopWidth: 1, borderColor: '#263552', paddingHorizontal: 16, paddingTop: 10, paddingBottom: 20 },
+  manualModalInput: { marginTop: 10, borderRadius: 14, borderWidth: 1, borderColor: '#334463', backgroundColor: '#0b1220', paddingHorizontal: 14, paddingVertical: 12, color: '#f8fafc' },
+  manualModalActions: { marginTop: 14, flexDirection: 'row', gap: 10 },
   modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.6)' },
-  modalCard: { maxHeight: '90%', borderTopLeftRadius: 28, borderTopRightRadius: 28, backgroundColor: '#fff', paddingHorizontal: 16, paddingTop: 10 },
-  sheetHandle: { alignSelf: 'center', width: 44, height: 4, borderRadius: 999, backgroundColor: '#cbd5e1', marginBottom: 12 },
+  modalCard: { maxHeight: '90%', borderTopLeftRadius: 28, borderTopRightRadius: 28, backgroundColor: '#111a2d', borderTopWidth: 1, borderColor: '#263552', paddingHorizontal: 16, paddingTop: 10 },
+  sheetHandle: { alignSelf: 'center', width: 44, height: 4, borderRadius: 999, backgroundColor: '#475569', marginBottom: 12 },
   loadingCenter: { alignItems: 'center', justifyContent: 'center', paddingVertical: 24 },
-  loadingText: { marginTop: 12, color: '#64748b' },
-  confirmTitle: { marginBottom: 4, fontSize: 20, fontWeight: '800', color: '#0f172a' },
-  confirmSubtitle: { marginBottom: 14, fontSize: 13, color: '#64748b' },
+  loadingText: { marginTop: 12, color: '#9bb0d2' },
+  confirmTitle: { marginBottom: 4, fontSize: 20, fontWeight: '800', color: '#f8fafc' },
+  confirmSubtitle: { marginBottom: 14, fontSize: 13, color: '#9bb0d2' },
   sheetSection: { gap: 12 },
   section: { marginTop: 12 },
-  sectionLabel: { marginBottom: 8, fontSize: 14, fontWeight: '700', color: '#334155' },
+  sectionLabel: { marginBottom: 8, fontSize: 14, fontWeight: '700', color: '#c5d5ef' },
   summaryRow: { flexDirection: 'row', gap: 10 },
-  summaryChip: { flex: 1, borderRadius: 14, borderWidth: 1, borderColor: '#e2e8f0', backgroundColor: '#f8fafc', paddingVertical: 10, alignItems: 'center' },
-  summaryValue: { fontSize: 18, fontWeight: '900', color: '#0f172a' },
-  summaryLabel: { marginTop: 2, fontSize: 11, fontWeight: '700', color: '#64748b', textTransform: 'uppercase' },
-  conditionListWrap: { maxHeight: 176, overflow: 'hidden', borderRadius: 12, borderWidth: 1, borderColor: '#e2e8f0' },
-  conditionRow: { borderBottomWidth: 1, borderBottomColor: '#f1f5f9', paddingHorizontal: 12, paddingVertical: 10, backgroundColor: '#fff' },
+  summaryChip: { flex: 1, borderRadius: 14, borderWidth: 1, borderColor: '#263552', backgroundColor: '#0b1220', paddingVertical: 10, alignItems: 'center' },
+  summaryValue: { fontSize: 18, fontWeight: '900', color: '#f8fafc' },
+  summaryLabel: { marginTop: 2, fontSize: 11, fontWeight: '700', color: '#8aa0c5', textTransform: 'uppercase' },
+  conditionListWrap: { maxHeight: 176, overflow: 'hidden', borderRadius: 12, borderWidth: 1, borderColor: '#334463' },
+  conditionRow: { borderBottomWidth: 1, borderBottomColor: '#223252', paddingHorizontal: 12, paddingVertical: 10, backgroundColor: '#0b1220' },
   conditionRowSelected: { backgroundColor: '#2563EB' },
-  conditionText: { fontSize: 14, color: '#334155' },
+  conditionText: { fontSize: 14, color: '#c5d5ef' },
   conditionTextSelected: { color: '#fff' },
   candidateWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  candidateChip: { borderRadius: 999, borderWidth: 1, borderColor: '#cbd5e1', backgroundColor: '#fff', paddingHorizontal: 12, paddingVertical: 8 },
+  candidateChip: { borderRadius: 999, borderWidth: 1, borderColor: '#334463', backgroundColor: '#0b1220', paddingHorizontal: 12, paddingVertical: 8 },
   candidateChipSelected: { backgroundColor: '#2563EB', borderColor: '#2563EB' },
   candidateChipDisabled: { opacity: 0.5 },
-  candidateText: { fontSize: 12, fontWeight: '700', color: '#334155' },
+  candidateText: { fontSize: 12, fontWeight: '700', color: '#c5d5ef' },
   candidateTextSelected: { color: '#fff' },
   candidateTextDisabled: { color: '#94a3b8' },
-  remarksInput: { minHeight: 80, borderRadius: 12, borderWidth: 1, borderColor: '#e2e8f0', backgroundColor: '#f8fafc', paddingHorizontal: 12, paddingVertical: 10, color: '#0f172a' },
+  remarksInput: { minHeight: 80, borderRadius: 12, borderWidth: 1, borderColor: '#334463', backgroundColor: '#0b1220', paddingHorizontal: 12, paddingVertical: 10, color: '#f8fafc' },
   actionRow: { marginTop: 16, flexDirection: 'row', gap: 12, paddingBottom: 24 },
   actionButton: { flex: 1, borderRadius: 12, paddingVertical: 12, alignItems: 'center' },
-  cancelButton: { backgroundColor: '#94a3b8' },
+  cancelButton: { backgroundColor: '#475569' },
   confirmButton: { backgroundColor: '#10b981' },
   actionButtonText: { color: '#fff', fontWeight: '700' },
 });

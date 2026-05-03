@@ -128,6 +128,18 @@ export function CycleSelectScreen({ onSelectCycle }: CycleSelectScreenProps): Re
 
     return (
         <View style={styles.container}>
+            <View style={styles.heroCard}>
+                <Text style={styles.heroTitle}>Select Inventory Cycle</Text>
+                <Text style={styles.heroSubtitle}>Choose an active cycle to start scanning, review assets, and generate reports.</Text>
+            </View>
+
+            <TouchableOpacity
+                style={styles.createButton}
+                onPress={() => void handleCreateCycle()}
+            >
+                <Text style={styles.createButtonText}>Create Current Year Cycle</Text>
+            </TouchableOpacity>
+
             <FlatList
                 data={cycles}
                 keyExtractor={(item) => item.id.toString()}
@@ -142,21 +154,48 @@ export function CycleSelectScreen({ onSelectCycle }: CycleSelectScreenProps): Re
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#f8fafc', paddingHorizontal: 16, paddingTop: 8 },
-    centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-    loadingText: { marginTop: 12, fontSize: 16, color: '#64748b' },
+    container: { flex: 1, backgroundColor: '#0b1220', paddingHorizontal: 14, paddingTop: 10 },
+    centered: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0b1220' },
+    loadingText: { marginTop: 12, fontSize: 16, color: '#9bb0d2' },
     emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 16 },
-    emptyTitle: { fontSize: 20, fontWeight: '700', color: '#0f172a', marginBottom: 8 },
-    emptySubtitle: { fontSize: 14, color: '#64748b', marginBottom: 24 },
-    createButton: { borderRadius: 12, backgroundColor: '#2563EB', paddingHorizontal: 20, paddingVertical: 12 },
+    emptyTitle: { fontSize: 20, fontWeight: '700', color: '#f8fafc', marginBottom: 8 },
+    emptySubtitle: { fontSize: 14, color: '#9bb0d2', marginBottom: 24 },
+    heroCard: {
+        borderRadius: 18,
+        borderWidth: 1,
+        borderColor: '#263552',
+        backgroundColor: '#111a2d',
+        paddingHorizontal: 14,
+        paddingVertical: 14,
+        marginBottom: 10,
+    },
+    heroTitle: { fontSize: 22, fontWeight: '900', color: '#f8fafc' },
+    heroSubtitle: { marginTop: 4, fontSize: 12, color: '#9bb0d2' },
+    createButton: {
+        borderRadius: 12,
+        backgroundColor: '#2563EB',
+        borderWidth: 1,
+        borderColor: '#3b82f6',
+        paddingHorizontal: 20,
+        paddingVertical: 11,
+        marginBottom: 10,
+        alignItems: 'center',
+    },
     createButtonText: { color: '#fff', fontWeight: '700', fontSize: 14 },
-    listContent: { paddingVertical: 8 },
-    cycleCard: { borderRadius: 12, backgroundColor: '#fff', borderWidth: 1, borderColor: '#e2e8f0', padding: 16, marginBottom: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2, elevation: 2 },
+    listContent: { paddingVertical: 2, paddingBottom: 20 },
+    cycleCard: {
+        borderRadius: 14,
+        backgroundColor: '#111a2d',
+        borderWidth: 1,
+        borderColor: '#263552',
+        padding: 14,
+        marginBottom: 10,
+    },
     cycleHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-    cycleLabel: { fontSize: 18, fontWeight: '700', color: '#0f172a' },
-    cycleStatus: { fontSize: 11, fontWeight: '700', color: '#10b981', backgroundColor: '#d1fae5', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
-    statsContainer: { flexDirection: 'row', justifyContent: 'space-around' },
+    cycleLabel: { fontSize: 17, fontWeight: '800', color: '#f8fafc' },
+    cycleStatus: { fontSize: 11, fontWeight: '800', color: '#052e16', backgroundColor: '#4ade80', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999 },
+    statsContainer: { flexDirection: 'row', justifyContent: 'space-around', borderTopWidth: 1, borderTopColor: '#223252', paddingTop: 10 },
     statBox: { flex: 1, alignItems: 'center' },
-    statValue: { fontSize: 24, fontWeight: '900', color: '#2563EB' },
-    statLabel: { marginTop: 4, fontSize: 12, color: '#64748b' },
+    statValue: { fontSize: 22, fontWeight: '900', color: '#93c5fd' },
+    statLabel: { marginTop: 4, fontSize: 11, color: '#9bb0d2' },
 });

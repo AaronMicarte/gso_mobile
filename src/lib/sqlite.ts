@@ -8,18 +8,50 @@ interface DatabaseConnection {
 }
 
 export async function openDatabaseAsync(name: string) {
-    const db = (await expoOpenDatabaseAsync(name)) as SQLiteDatabase & DatabaseConnection;
+    let db = (await expoOpenDatabaseAsync(name)) as SQLiteDatabase & DatabaseConnection;
+
+    const shouldReconnect = (error: unknown): boolean => {
+        const message = error instanceof Error ? error.message : String(error);
+        return message.includes('NativeDatabase.prepareAsync') || message.includes('NullPointerException');
+    };
+
+    const reconnect = async (): Promise<void> => {
+        db = (await expoOpenDatabaseAsync(name)) as SQLiteDatabase & DatabaseConnection;
+    };
 
     return {
         async execAsync(sql: string, params: Params = []) {
-            if (params.length > 0) {
-                await db.runAsync(sql, params);
-                return;
+            try {
+                if (params.length > 0) {
+                    await db.runAsync(sql, params);
+                    return;
+                }
+                await db.execAsync(sql);
+            } catch (error) {
+                if (!shouldReconnect(error)) {
+                    throw error;
+                }
+
+                await reconnect();
+
+                if (params.length > 0) {
+                    await db.runAsync(sql, params);
+                    return;
+                }
+                await db.execAsync(sql);
             }
-            await db.execAsync(sql);
         },
-        getAllAsync<T = Record<string, unknown>>(sql: string, params: Params = []) {
-            return db.getAllAsync<T>(sql, params);
+        async getAllAsync<T = Record<string, unknown>>(sql: string, params: Params = []) {
+            try {
+                return await db.getAllAsync<T>(sql, params);
+            } catch (error) {
+                if (!shouldReconnect(error)) {
+                    throw error;
+                }
+
+                await reconnect();
+                return db.getAllAsync<T>(sql, params);
+            }
         },
     };
 }

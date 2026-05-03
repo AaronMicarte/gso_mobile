@@ -140,26 +140,37 @@ export function ScannedAssetsScreen({ cycleId }: ScannedAssetsScreenProps): Reac
     }
 
     const renderScanItem = (scan: RpcInventoryScanRecord) => (
-        <View style={styles.tableRow}>
-            <Text style={[styles.tableCell, styles.typeCell]}>{scan.rpc_type}</Text>
-            <Text style={[styles.tableCell, styles.numberCell]}>{scan.property_number ?? '—'}</Text>
-            <Text style={[styles.tableCell, styles.articleCell]}>{scan.article ?? '—'}</Text>
-            <Text style={[styles.tableCell, styles.officerCell]}>
-                {scan.accountable_officer ?? scan.scanned_by?.FullName ?? '—'}
-            </Text>
-            <Text style={[styles.tableCell, styles.conditionCell]}>
-                {scan.condition?.ConditionName ?? '—'}
-            </Text>
-            <Text style={[styles.tableCell, styles.countCell]}>{scan.quantity_per_count}</Text>
+        <View style={styles.assetCard}>
+            <View style={styles.assetHeader}>
+                <Text style={styles.assetTitle}>{scan.property_number ?? 'No property number'}</Text>
+                <View style={styles.assetTypeChip}>
+                    <Text style={styles.assetTypeChipText}>{scan.rpc_type}</Text>
+                </View>
+            </View>
+
+            <Text style={styles.assetArticle}>{scan.article ?? 'No article'}</Text>
+            <Text style={styles.assetMeta}>Officer: {scan.accountable_officer ?? scan.scanned_by?.FullName ?? '—'}</Text>
+
+            <View style={styles.assetStatsRow}>
+                <View style={styles.assetStatBox}>
+                    <Text style={styles.assetStatLabel}>Condition</Text>
+                    <Text style={styles.assetStatValue}>{scan.condition?.ConditionName ?? '—'}</Text>
+                </View>
+                <View style={styles.assetStatBox}>
+                    <Text style={styles.assetStatLabel}>Count</Text>
+                    <Text style={styles.assetStatValue}>{scan.quantity_per_count}</Text>
+                </View>
+            </View>
+
             <View style={styles.actionsCell}>
                 <TouchableOpacity style={styles.actionButton} onPress={() => openEditor(scan)}>
-                    <Text style={styles.actionButtonText}>✎</Text>
+                    <Text style={styles.actionButtonText}>Edit</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                     style={[styles.actionButton, styles.deleteButton]}
                     onPress={() => handleDeleteScan(scan.id)}
                 >
-                    <Text style={styles.actionButtonText}>🗑</Text>
+                    <Text style={styles.actionButtonText}>Remove</Text>
                 </TouchableOpacity>
             </View>
         </View>
@@ -177,6 +188,8 @@ export function ScannedAssetsScreen({ cycleId }: ScannedAssetsScreenProps): Reac
     return (
         <View style={styles.container}>
             <View style={styles.filterBar}>
+                <Text style={styles.screenTitle}>Scanned Assets</Text>
+                <Text style={styles.screenSubtitle}>Review, filter, and correct scanned entries for this cycle.</Text>
                 <TextInput
                     style={styles.searchInput}
                     placeholder="Search property/article"
@@ -280,45 +293,80 @@ export function ScannedAssetsScreen({ cycleId }: ScannedAssetsScreenProps): Reac
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#f8fafc' },
-    filterBar: { backgroundColor: '#fff', paddingHorizontal: 12, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#e2e8f0' },
-    searchInput: { borderRadius: 8, borderWidth: 1, borderColor: '#e2e8f0', backgroundColor: '#f1f5f9', paddingHorizontal: 12, paddingVertical: 8, color: '#0f172a', marginBottom: 8 },
+    container: { flex: 1, backgroundColor: '#0b1220' },
+    filterBar: {
+        backgroundColor: '#111a2d',
+        paddingHorizontal: 14,
+        paddingTop: 14,
+        paddingBottom: 12,
+        borderBottomWidth: 1,
+        borderBottomColor: '#1f2b44',
+    },
+    screenTitle: { fontSize: 22, fontWeight: '900', color: '#f8fafc' },
+    screenSubtitle: { marginTop: 4, marginBottom: 12, fontSize: 12, color: '#93a6c4' },
+    searchInput: {
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: '#263552',
+        backgroundColor: '#0b1220',
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+        color: '#f8fafc',
+        marginBottom: 10,
+    },
     filterButtons: { flexDirection: 'row', gap: 8 },
-    filterButton: { borderRadius: 6, borderWidth: 1, borderColor: '#cbd5e1', paddingHorizontal: 12, paddingVertical: 6 },
-    filterButtonActive: { backgroundColor: '#2563EB', borderColor: '#2563EB' },
-    filterButtonText: { fontSize: 12, fontWeight: '600', color: '#64748b' },
-    filterButtonTextActive: { color: '#fff' },
-    listContent: { paddingHorizontal: 12, paddingVertical: 8 },
-    tableRow: { backgroundColor: '#fff', borderRadius: 8, borderWidth: 1, borderColor: '#e2e8f0', padding: 12, marginBottom: 8, flexDirection: 'row', alignItems: 'center' },
-    tableCell: { fontSize: 12, color: '#0f172a', flex: 1 },
-    typeCell: { fontWeight: '600', maxWidth: 60 },
-    numberCell: { maxWidth: 80 },
-    articleCell: { flex: 2 },
-    officerCell: { maxWidth: 70 },
-    conditionCell: { maxWidth: 60 },
-    countCell: { textAlign: 'center', maxWidth: 30 },
-    actionsCell: { flexDirection: 'row', gap: 4 },
-    actionButton: { padding: 4, borderRadius: 4, backgroundColor: '#f1f5f9' },
-    deleteButton: { backgroundColor: '#fee2e2' },
-    actionButtonText: { fontSize: 14 },
+    filterButton: {
+        borderRadius: 999,
+        borderWidth: 1,
+        borderColor: '#334463',
+        backgroundColor: '#0b1220',
+        paddingHorizontal: 14,
+        paddingVertical: 7,
+    },
+    filterButtonActive: { backgroundColor: '#2563eb', borderColor: '#2563eb' },
+    filterButtonText: { fontSize: 12, fontWeight: '700', color: '#a7b7d1' },
+    filterButtonTextActive: { color: '#ffffff' },
+    listContent: { paddingHorizontal: 12, paddingVertical: 10 },
+    assetCard: {
+        borderRadius: 16,
+        borderWidth: 1,
+        borderColor: '#263552',
+        backgroundColor: '#111a2d',
+        padding: 12,
+        marginBottom: 10,
+    },
+    assetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+    assetTitle: { flex: 1, paddingRight: 8, fontSize: 16, fontWeight: '800', color: '#f8fafc' },
+    assetTypeChip: { borderRadius: 999, backgroundColor: '#1d4ed8', paddingHorizontal: 10, paddingVertical: 5 },
+    assetTypeChipText: { color: '#ffffff', fontSize: 11, fontWeight: '800' },
+    assetArticle: { marginTop: 8, fontSize: 13, color: '#dbe7ff' },
+    assetMeta: { marginTop: 4, fontSize: 12, color: '#9bb0d2' },
+    assetStatsRow: { marginTop: 10, flexDirection: 'row', gap: 8 },
+    assetStatBox: { flex: 1, borderRadius: 12, backgroundColor: '#0b1220', borderWidth: 1, borderColor: '#263552', padding: 10 },
+    assetStatLabel: { fontSize: 10, color: '#8aa0c5', textTransform: 'uppercase', fontWeight: '800' },
+    assetStatValue: { marginTop: 4, fontSize: 13, color: '#f8fafc', fontWeight: '700' },
+    actionsCell: { marginTop: 10, flexDirection: 'row', gap: 8 },
+    actionButton: { flex: 1, paddingVertical: 10, borderRadius: 10, backgroundColor: '#1e293b', alignItems: 'center' },
+    deleteButton: { backgroundColor: '#991b1b' },
+    actionButtonText: { color: '#ffffff', fontSize: 12, fontWeight: '800' },
     emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 16 },
-    emptyText: { fontSize: 14, color: '#64748b', textAlign: 'center' },
-    centerLoading: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-    loadingText: { marginTop: 12, fontSize: 14, color: '#64748b' },
+    emptyText: { fontSize: 14, color: '#9bb0d2', textAlign: 'center' },
+    centerLoading: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0b1220' },
+    loadingText: { marginTop: 12, fontSize: 14, color: '#9bb0d2' },
     modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' },
-    modalContent: { backgroundColor: '#fff', borderTopLeftRadius: 16, borderTopRightRadius: 16, paddingHorizontal: 16, paddingVertical: 24, minHeight: 420 },
-    modalTitle: { fontSize: 18, fontWeight: '700', color: '#0f172a', marginBottom: 16 },
+    modalContent: { backgroundColor: '#111a2d', borderTopLeftRadius: 18, borderTopRightRadius: 18, paddingHorizontal: 16, paddingVertical: 24, minHeight: 420, borderTopWidth: 1, borderColor: '#263552' },
+    modalTitle: { fontSize: 18, fontWeight: '700', color: '#f8fafc', marginBottom: 16 },
     closeButton: { position: 'absolute', top: 16, right: 16, width: 32, height: 32, justifyContent: 'center', alignItems: 'center' },
-    closeButtonText: { fontSize: 20, color: '#0f172a' },
-    sectionLabel: { marginTop: 8, marginBottom: 8, fontSize: 14, fontWeight: '700', color: '#334155' },
+    closeButtonText: { fontSize: 20, color: '#f8fafc' },
+    sectionLabel: { marginTop: 8, marginBottom: 8, fontSize: 14, fontWeight: '700', color: '#c5d5ef' },
     conditionList: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-    conditionChip: { borderRadius: 999, borderWidth: 1, borderColor: '#cbd5e1', paddingHorizontal: 12, paddingVertical: 8, marginBottom: 8 },
+    conditionChip: { borderRadius: 999, borderWidth: 1, borderColor: '#334463', paddingHorizontal: 12, paddingVertical: 8, marginBottom: 8, backgroundColor: '#0b1220' },
     conditionChipSelected: { backgroundColor: '#2563EB', borderColor: '#2563EB' },
-    conditionChipText: { color: '#334155', fontWeight: '600', fontSize: 12 },
+    conditionChipText: { color: '#c5d5ef', fontWeight: '600', fontSize: 12 },
     conditionChipTextSelected: { color: '#fff' },
-    remarksInput: { minHeight: 96, borderRadius: 12, borderWidth: 1, borderColor: '#e2e8f0', backgroundColor: '#f8fafc', paddingHorizontal: 12, paddingVertical: 10, color: '#0f172a' },
+    remarksInput: { minHeight: 96, borderRadius: 12, borderWidth: 1, borderColor: '#334463', backgroundColor: '#0b1220', paddingHorizontal: 12, paddingVertical: 10, color: '#f8fafc' },
     modalActions: { flexDirection: 'row', gap: 12, marginTop: 20 },
-    cancelButton: { flex: 1, borderRadius: 12, backgroundColor: '#94a3b8', alignItems: 'center', paddingVertical: 12 },
+    cancelButton: { flex: 1, borderRadius: 12, backgroundColor: '#475569', alignItems: 'center', paddingVertical: 12 },
     cancelButtonText: { color: '#fff', fontWeight: '700' },
     saveButton: { flex: 1, borderRadius: 12, backgroundColor: '#2563EB', alignItems: 'center', paddingVertical: 12 },
     saveButtonText: { color: '#fff', fontWeight: '700' },

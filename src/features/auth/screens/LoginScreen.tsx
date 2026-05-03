@@ -4,7 +4,6 @@ import {
     Alert,
     KeyboardAvoidingView,
     Platform,
-    StatusBar,
     StyleSheet,
     Text,
     TextInput,
@@ -142,7 +141,6 @@ function LoginScreen(): React.JSX.Element {
 
     return (
         <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-            <StatusBar barStyle="light-content" />
             <View style={styles.bgBlueGlow} />
             <View style={styles.bgCyanGlow} />
 

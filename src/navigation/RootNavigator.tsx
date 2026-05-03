@@ -19,44 +19,50 @@ const AuthStack = () => (
 );
 
 const AppStack = () => (
-    <Tab.Navigator
-        screenOptions={({ route }) => ({
-            tabBarIcon: ({ focused, color, size }) => {
-                let iconName: keyof typeof Ionicons.glyphMap = 'home';
-
-                if (route.name === 'Inventory') {
-                    iconName = focused ? 'scan' : 'scan-outline';
-                } else if (route.name === 'Queue') {
-                    iconName = focused ? 'list' : 'list-outline';
-                }
-
-                return <Ionicons name={iconName} size={size} color={color} />;
-            },
-            tabBarActiveTintColor: '#2563EB',
-            tabBarInactiveTintColor: '#64748B',
-            tabBarStyle: {
-                backgroundColor: '#FFFFFF',
-                borderTopColor: '#E2E8F0',
-                borderTopWidth: 1,
-                height: 66,
-                paddingBottom: 10,
-                paddingTop: 8,
-            },
-            tabBarLabelStyle: {
-                fontSize: 12,
-                fontWeight: '700',
-            },
-            headerShown: false,
-        })}
-    >
-        <Tab.Screen
-            name="Inventory"
-            children={() => <RpcInventoryWorkspace />}
-            options={{ tabBarLabel: 'RPC Inventory' }}
-        />
-        <Tab.Screen name="Queue" component={QueueScreen} options={{ tabBarLabel: 'Queue' }} />
-    </Tab.Navigator>
+    <AppShell />
 );
+
+function AppShell(): React.JSX.Element {
+    return (
+        <Tab.Navigator
+            screenOptions={({ route }) => ({
+                tabBarIcon: ({ focused, color, size }) => {
+                    let iconName: keyof typeof Ionicons.glyphMap = 'home';
+
+                    if (route.name === 'Inventory') {
+                        iconName = focused ? 'scan' : 'scan-outline';
+                    } else if (route.name === 'Queue') {
+                        iconName = focused ? 'list' : 'list-outline';
+                    }
+
+                    return <Ionicons name={iconName} size={size} color={color} />;
+                },
+                tabBarActiveTintColor: '#2563EB',
+                tabBarInactiveTintColor: '#64748B',
+                tabBarStyle: {
+                    backgroundColor: '#0b1220',
+                    borderTopColor: '#E2E8F0',
+                    borderTopWidth: 1,
+                    height: 66,
+                    paddingBottom: 10,
+                    paddingTop: 8,
+                },
+                tabBarLabelStyle: {
+                    fontSize: 12,
+                    fontWeight: '700',
+                },
+                headerShown: false,
+            })}
+        >
+            <Tab.Screen
+                name="Inventory"
+                children={() => <RpcInventoryWorkspace />}
+                options={{ tabBarLabel: 'RPC Inventory' }}
+            />
+            <Tab.Screen name="Queue" component={QueueScreen} options={{ tabBarLabel: 'Queue' }} />
+        </Tab.Navigator>
+    );
+}
 
 function RootNavigator(): React.JSX.Element {
     const { initializing, isAuthenticated } = useAuth();

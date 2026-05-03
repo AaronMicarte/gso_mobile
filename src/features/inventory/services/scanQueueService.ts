@@ -29,6 +29,45 @@ function createClientUuid(): string {
 class ScanQueueService {
     private db: DatabaseConnection | null = null;
 
+    private isStaleDatabaseError(error: unknown): boolean {
+        const message = error instanceof Error ? error.message : String(error);
+        return message.includes('NativeDatabase.prepareAsync') || message.includes('NullPointerException');
+    }
+
+    private async runWithDatabase<T>(operation: (db: DatabaseConnection) => Promise<T>): Promise<T> {
+        if (!this.db) {
+            await this.init();
+        }
+
+        if (!this.db) {
+            throw new Error('Database not initialized');
+        }
+
+        let lastError: unknown;
+
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+            try {
+                return await operation(this.db);
+            } catch (error) {
+                lastError = error;
+
+                if (!this.isStaleDatabaseError(error)) {
+                    throw error;
+                }
+
+                console.warn('[ScanQueueService] Reinitializing sqlite after native handle error');
+                this.db = null;
+                await this.init();
+
+                if (!this.db) {
+                    throw error;
+                }
+            }
+        }
+
+        throw lastError instanceof Error ? lastError : new Error('Database operation failed after reconnect');
+    }
+
     async init(): Promise<void> {
         // open a runtime promisified sqlite client
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -108,8 +147,6 @@ class ScanQueueService {
         propertyId?: number,
         remarks?: string
     ): Promise<LocalScan> {
-        if (!this.db) throw new Error('Database not initialized');
-
         let cycleId = 0;
         let invId = 0;
         let condId = 0;
@@ -182,59 +219,58 @@ class ScanQueueService {
             rpc_type: rpcType as 'RPCPPE' | 'RPCSEP' | undefined,
         };
 
-        await this.db.execAsync(
-            `INSERT INTO scan_queue (
+        await this.runWithDatabase((db) =>
+            db.execAsync(
+                `INSERT INTO scan_queue (
         id, client_uuid, cycle_id, inventory_detail_id, property_id,
         condition_id, scanned_at, remarks, device_id, user_id, status, created_at,
         article, description, property_number, unit_of_measure, unit_value,
         accountable_officer, condition_name, rpc_type
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [
-                scan.id,
-                scan.client_uuid,
-                scan.cycle_id,
-                scan.inventory_detail_id,
-                scan.property_id,
-                scan.condition_id,
-                scan.scanned_at,
-                scan.remarks,
-                scan.device_id,
-                scan.user_id,
-                scan.status,
-                scan.created_at,
-                scan.article ?? null,
-                scan.description ?? null,
-                scan.property_number ?? null,
-                scan.unit_of_measure ?? null,
-                scan.unit_value ?? null,
-                scan.accountable_officer ?? null,
-                scan.condition_name ?? null,
-                scan.rpc_type ?? null,
-            ]
+                [
+                    scan.id,
+                    scan.client_uuid,
+                    scan.cycle_id,
+                    scan.inventory_detail_id,
+                    scan.property_id,
+                    scan.condition_id,
+                    scan.scanned_at,
+                    scan.remarks,
+                    scan.device_id,
+                    scan.user_id,
+                    scan.status,
+                    scan.created_at,
+                    scan.article ?? null,
+                    scan.description ?? null,
+                    scan.property_number ?? null,
+                    scan.unit_of_measure ?? null,
+                    scan.unit_value ?? null,
+                    scan.accountable_officer ?? null,
+                    scan.condition_name ?? null,
+                    scan.rpc_type ?? null,
+                ]
+            )
         );
 
         return scan;
     }
 
     async getPendingScans(limit: number = 50, cycleId?: number): Promise<LocalScan[]> {
-        if (!this.db) throw new Error('Database not initialized');
-
         if (typeof cycleId === 'number') {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const result = await (this.db as any).getAllAsync(
-                `SELECT * FROM scan_queue WHERE status = 'pending' AND cycle_id = ? ORDER BY created_at ASC LIMIT ?`,
-                [cycleId, limit]
+            const result = await this.runWithDatabase((db) =>
+                db.getAllAsync(
+                    `SELECT * FROM scan_queue WHERE status = 'pending' AND cycle_id = ? ORDER BY created_at ASC LIMIT ?`,
+                    [cycleId, limit]
+                )
             );
-            return (result || []) as LocalScan[];
+            return (result || []) as unknown as LocalScan[];
         }
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const result = await (this.db as any).getAllAsync(
-            `SELECT * FROM scan_queue WHERE status = 'pending' ORDER BY created_at ASC LIMIT ?`,
-            [limit]
+        const result = await this.runWithDatabase((db) =>
+            db.getAllAsync(`SELECT * FROM scan_queue WHERE status = 'pending' ORDER BY created_at ASC LIMIT ?`, [limit])
         );
 
-        return (result || []) as LocalScan[];
+        return (result || []) as unknown as LocalScan[];
     }
 
     async updateScanStatus(
@@ -242,8 +278,6 @@ class ScanQueueService {
         status: 'pending' | 'syncing' | 'synced' | 'failed',
         errorMessage?: string
     ): Promise<void> {
-        if (!this.db) throw new Error('Database not initialized');
-
         const now = new Date().toISOString();
         let query = `UPDATE scan_queue SET status = ?, last_attempt_at = ?, attempt_count = attempt_count + 1`;
         const params: Array<string | null | number> = [status, now];
@@ -256,37 +290,30 @@ class ScanQueueService {
         query += ` WHERE client_uuid = ?`;
         params.push(clientUuid);
 
-        await this.db.execAsync(query, params);
+        await this.runWithDatabase((db) => db.execAsync(query, params));
     }
 
     async deleteScan(clientUuid: string): Promise<void> {
-        if (!this.db) throw new Error('Database not initialized');
-
-        await this.db.execAsync(`DELETE FROM scan_queue WHERE client_uuid = ?`, [clientUuid]);
+        await this.runWithDatabase((db) => db.execAsync(`DELETE FROM scan_queue WHERE client_uuid = ?`, [clientUuid]));
     }
 
     async markSynced(clientUuid: string): Promise<void> {
-        if (!this.db) throw new Error('Database not initialized');
-
-        await this.db.execAsync(
-            `UPDATE scan_queue SET status = 'synced', error_message = NULL WHERE client_uuid = ?`,
-            [clientUuid]
+        await this.runWithDatabase((db) =>
+            db.execAsync(`UPDATE scan_queue SET status = 'synced', error_message = NULL WHERE client_uuid = ?`, [clientUuid])
         );
     }
 
     async markFailed(clientUuid: string, errorMessage: string): Promise<void> {
-        if (!this.db) throw new Error('Database not initialized');
-
         const now = new Date().toISOString();
-        await this.db.execAsync(
-            `UPDATE scan_queue SET status = 'failed', error_message = ?, last_attempt_at = ? WHERE client_uuid = ?`,
-            [errorMessage, now, clientUuid]
+        await this.runWithDatabase((db) =>
+            db.execAsync(
+                `UPDATE scan_queue SET status = 'failed', error_message = ?, last_attempt_at = ? WHERE client_uuid = ?`,
+                [errorMessage, now, clientUuid]
+            )
         );
     }
 
     async reconcileSyncedScans(cycleId: number): Promise<number> {
-        if (!this.db) throw new Error('Database not initialized');
-
         try {
             const remoteDetailIds = await this.fetchRemoteInventoryDetailIds(cycleId);
             const syncedScans = await this.getAllScans(cycleId);
@@ -312,7 +339,6 @@ class ScanQueueService {
                 // Small delay to ensure SQLite writes are persisted
                 await new Promise((r) => setTimeout(r, 50));
                 removed = toDelete.length;
-            } else {
             }
 
             return removed;
@@ -345,8 +371,6 @@ class ScanQueueService {
     }
 
     async getQueueStats(cycleId?: number): Promise<QueueStats> {
-        if (!this.db) throw new Error('Database not initialized');
-
         interface StatsRow {
             total: number;
             pending: number | null;
@@ -354,11 +378,8 @@ class ScanQueueService {
             failed: number | null;
         }
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        let stats: StatsRow[] = [];
         if (typeof cycleId === 'number') {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            stats = await (this.db as any).getAllAsync(
+            const stats = await this.runWithDatabase((db) => db.getAllAsync<StatsRow>(
                 `SELECT
         COUNT(*) as total,
         SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending,
@@ -366,10 +387,17 @@ class ScanQueueService {
         SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed
       FROM scan_queue WHERE cycle_id = ?`,
                 [cycleId]
-            );
+            ));
+            if (stats && stats.length > 0) {
+                return {
+                    total: stats[0].total || 0,
+                    pending: stats[0].pending || 0,
+                    synced: stats[0].synced || 0,
+                    failed: stats[0].failed || 0,
+                };
+            }
         } else {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            stats = await (this.db as any).getAllAsync(
+            const stats = await this.runWithDatabase((db) => db.getAllAsync<StatsRow>(
                 `SELECT
         COUNT(*) as total,
         SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending,
@@ -377,52 +405,41 @@ class ScanQueueService {
         SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed
       FROM scan_queue`,
                 []
-            );
-        }
+            ));
 
-        if (stats && stats.length > 0) {
-            return {
-                total: stats[0].total || 0,
-                pending: stats[0].pending || 0,
-                synced: stats[0].synced || 0,
-                failed: stats[0].failed || 0,
-            };
+            if (stats && stats.length > 0) {
+                return {
+                    total: stats[0].total || 0,
+                    pending: stats[0].pending || 0,
+                    synced: stats[0].synced || 0,
+                    failed: stats[0].failed || 0,
+                };
+            }
         }
 
         return { total: 0, pending: 0, synced: 0, failed: 0 };
     }
 
     async clearOldScans(cycleId: number, daysOld: number = 30): Promise<void> {
-        if (!this.db) throw new Error('Database not initialized');
-
         const cutoffDate = new Date();
         cutoffDate.setDate(cutoffDate.getDate() - daysOld);
 
-        await this.db.execAsync(
-            `DELETE FROM scan_queue WHERE cycle_id = ? AND status = 'synced' AND created_at < ?`,
-            [cycleId, cutoffDate.toISOString()]
+        await this.runWithDatabase((db) =>
+            db.execAsync(`DELETE FROM scan_queue WHERE cycle_id = ? AND status = 'synced' AND created_at < ?`, [cycleId, cutoffDate.toISOString()])
         );
     }
 
     async getAllScans(cycleId?: number): Promise<LocalScan[]> {
-        if (!this.db) throw new Error('Database not initialized');
-
         if (typeof cycleId === 'number') {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const result = await (this.db as any).getAllAsync(
-                `SELECT * FROM scan_queue WHERE cycle_id = ? ORDER BY created_at DESC`,
-                [cycleId]
+            const result = await this.runWithDatabase((db) =>
+                db.getAllAsync(`SELECT * FROM scan_queue WHERE cycle_id = ? ORDER BY created_at DESC`, [cycleId])
             );
-            return (result || []) as LocalScan[];
+            return (result || []) as unknown as LocalScan[];
         }
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const result = await (this.db as any).getAllAsync(
-            `SELECT * FROM scan_queue ORDER BY created_at DESC`,
-            []
-        );
+        const result = await this.runWithDatabase((db) => db.getAllAsync(`SELECT * FROM scan_queue ORDER BY created_at DESC`, []));
 
-        return (result || []) as LocalScan[];
+        return (result || []) as unknown as LocalScan[];
     }
 }
 

@@ -8,8 +8,6 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
-import { StatusBar } from 'expo-status-bar';
-import * as NavigationBar from 'expo-navigation-bar';
 import { useFocusEffect } from '@react-navigation/native';
 import { RpcCycle } from '../../../types';
 import { useAuth } from '../../auth/providers/AuthProvider';
@@ -36,22 +34,6 @@ export function RpcInventoryWorkspace({
     const [activeTab, setActiveTab] = useState<TabType>('cycles');
     const [cycleInfo, setCycleInfo] = useState<RpcCycle | null>(null);
     const [loadingCycles, setLoadingCycles] = useState(true);
-
-    useEffect(() => {
-        // Hide the navigation bar on supported platforms. Avoid calling
-        // `setBehaviorAsync` — it's deprecated / unsupported when
-        // Android edge-to-edge is enabled and causes noisy warnings.
-        try {
-            void NavigationBar.setVisibilityAsync('hidden');
-        } catch (e) {
-            // ignore errors setting navigation bar visibility in edge cases
-            console.debug('NavigationBar.setVisibilityAsync failed:', e);
-        }
-
-        return () => {
-            void NavigationBar.setVisibilityAsync('visible');
-        };
-    }, []);
 
     const refreshCycles = useCallback(async (): Promise<void> => {
         setLoadingCycles(true);
@@ -99,10 +81,6 @@ export function RpcInventoryWorkspace({
             setLoadingCycles(false);
         }
     }, [initialCycleId, selectedCycleId]);
-
-    useEffect(() => {
-        void refreshCycles();
-    }, [refreshCycles]);
 
     useFocusEffect(
         useCallback(() => {
@@ -156,19 +134,11 @@ export function RpcInventoryWorkspace({
 
     return (
         <View style={styles.container}>
-            <StatusBar hidden />
-            {/* Header */}
             <View style={styles.header}>
                 <View style={styles.headerContent}>
                     <TouchableOpacity onPress={handleBackToCycles} style={styles.backButton}>
-                        <Text style={styles.backButtonText}>← Back</Text>
+                        <Text style={styles.backButtonText}>Back</Text>
                     </TouchableOpacity>
-                    <View>
-                        <Text style={styles.headerTitle}>RPCPPE / RPCSEP Workspace</Text>
-                        {cycleInfo && (
-                            <Text style={styles.headerSubtitle}>{cycleInfo.cycle_label}</Text>
-                        )}
-                    </View>
                     <TouchableOpacity
                         style={styles.logoutButton}
                         onPress={() => {
@@ -187,26 +157,19 @@ export function RpcInventoryWorkspace({
                         <Text style={styles.logoutButtonText}>Logout</Text>
                     </TouchableOpacity>
                 </View>
-                <View style={styles.stats}>
-                    <View style={styles.statItem}>
-                        <Text style={styles.statLabel}>TOTAL</Text>
-                        <Text style={styles.statValue}>{cycleInfo?.scans_count ?? 0}</Text>
-                    </View>
-                    <View style={styles.statItem}>
-                        <Text style={styles.statLabel}>RPCPPE</Text>
-                        <Text style={styles.statValue}>{cycleInfo?.rpcppe_count ?? 0}</Text>
-                    </View>
-                    <View style={styles.statItem}>
-                        <Text style={styles.statLabel}>RPCSEP</Text>
-                        <Text style={styles.statValue}>{cycleInfo?.rpcsep_count ?? 0}</Text>
-                    </View>
-                </View>
             </View>
 
             {/* Content */}
             <View style={styles.content}>
                 {activeTab === 'scanner' && (
-                    <ScannerScreen cycleId={selectedCycleId} />
+                    <ScannerScreen
+                        cycleId={selectedCycleId}
+                        cycleTotals={{
+                            total: cycleInfo?.scans_count ?? 0,
+                            rpcppe: cycleInfo?.rpcppe_count ?? 0,
+                            rpcsep: cycleInfo?.rpcsep_count ?? 0,
+                        }}
+                    />
                 )}
                 {activeTab === 'assets' && (
                     <ScannedAssetsScreen cycleId={selectedCycleId} />
@@ -249,26 +212,20 @@ export function RpcInventoryWorkspace({
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#f8fafc' },
-    header: { backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#e2e8f0', paddingHorizontal: 16, paddingTop: 12, paddingBottom: 16 },
-    headerContent: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
+    container: { flex: 1, backgroundColor: '#0b1220' },
+    header: { backgroundColor: '#111a2d', borderBottomWidth: 1, borderBottomColor: '#1f2b44', paddingHorizontal: 14, paddingTop: 8, paddingBottom: 8 },
+    headerContent: { flexDirection: 'row', alignItems: 'center' },
     backButton: { paddingRight: 12 },
-    backButtonText: { fontSize: 14, fontWeight: '600', color: '#2563EB' },
-    headerTitle: { fontSize: 18, fontWeight: '700', color: '#0f172a' },
-    headerSubtitle: { fontSize: 12, color: '#64748b', marginTop: 2 },
-    logoutButton: { marginLeft: 'auto', borderRadius: 999, backgroundColor: '#fee2e2', paddingHorizontal: 12, paddingVertical: 8 },
-    logoutButtonText: { color: '#b91c1c', fontSize: 12, fontWeight: '800' },
-    stats: { flexDirection: 'row', justifyContent: 'space-around', paddingTop: 12, borderTopWidth: 1, borderTopColor: '#e2e8f0' },
-    statItem: { alignItems: 'center' },
-    statLabel: { fontSize: 10, color: '#64748b', textTransform: 'uppercase', fontWeight: '600' },
-    statValue: { fontSize: 20, fontWeight: '900', color: '#2563EB', marginTop: 4 },
-    bottomDock: { backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: '#e2e8f0' },
-    tabScroll: { flexDirection: 'row' },
-    tab: { paddingVertical: 12, paddingHorizontal: 16, alignItems: 'center', borderTopWidth: 2, borderTopColor: 'transparent' },
-    tabActive: { borderTopColor: '#2563EB' },
-    tabText: { fontSize: 14, fontWeight: '600', color: '#64748b' },
-    tabTextActive: { color: '#2563EB' },
+    backButtonText: { fontSize: 14, fontWeight: '700', color: '#93c5fd' },
+    logoutButton: { marginLeft: 'auto', borderRadius: 999, backgroundColor: '#991b1b', paddingHorizontal: 12, paddingVertical: 8 },
+    logoutButtonText: { color: '#fecaca', fontSize: 12, fontWeight: '800' },
+    bottomDock: { backgroundColor: '#111a2d', borderTopWidth: 1, borderTopColor: '#1f2b44' },
+    tabScroll: { flexDirection: 'row', paddingHorizontal: 4, paddingVertical: 6, gap: 6 },
+    tab: { paddingVertical: 10, paddingHorizontal: 14, alignItems: 'center', borderRadius: 10, backgroundColor: '#0b1220', borderWidth: 1, borderColor: '#263552' },
+    tabActive: { backgroundColor: '#2563EB', borderColor: '#2563EB' },
+    tabText: { fontSize: 13, fontWeight: '700', color: '#9bb0d2' },
+    tabTextActive: { color: '#ffffff' },
     content: { flex: 1 },
-    loadingContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#f8fafc' },
-    loadingText: { marginTop: 12, color: '#64748b', fontWeight: '600' },
+    loadingContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#0b1220' },
+    loadingText: { marginTop: 12, color: '#9bb0d2', fontWeight: '600' },
 });
