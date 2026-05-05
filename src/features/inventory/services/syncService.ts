@@ -8,9 +8,21 @@ const DEFAULT_SYNC_INTERVAL_MS = 30000;
 const DEFAULT_MAX_RETRY_ATTEMPTS = 5;
 const RETRY_DELAY_MS = 2000;
 
+interface BulkStoreScanResult {
+  status?: 'created' | 'duplicate' | 'error' | string;
+  client_uuid: string;
+  message?: string;
+}
+
+interface BulkStoreScanResponse {
+  results?: BulkStoreScanResult[];
+}
+
 function resolveSyncIntervalMs(): number {
   const configuredInterval = Number(process.env.EXPO_PUBLIC_SYNC_INTERVAL_MS);
-  return Number.isFinite(configuredInterval) && configuredInterval > 0 ? configuredInterval : DEFAULT_SYNC_INTERVAL_MS;
+  return Number.isFinite(configuredInterval) && configuredInterval > 0
+    ? configuredInterval
+    : DEFAULT_SYNC_INTERVAL_MS;
 }
 
 function resolveMaxRetryAttempts(): number {
@@ -55,7 +67,12 @@ class SyncService {
     }
   }
 
-  async syncPendingScans(): Promise<{ synced: number; failed: number; total: number; failures: Array<{ client_uuid: string; message: string }> }> {
+  async syncPendingScans(): Promise<{
+    synced: number;
+    failed: number;
+    total: number;
+    failures: Array<{ client_uuid: string; message: string }>;
+  }> {
     if (this.isSyncing) return { synced: 0, failed: 0, total: 0, failures: [] };
     this.isSyncing = true;
     let totalSynced = 0;
@@ -83,7 +100,12 @@ class SyncService {
       return report;
     } catch (error) {
       console.error('Sync error', error);
-      const report = { synced: totalSynced, failed: totalFailed, total: 0, failures: [{ client_uuid: 'unknown', message: String(error) }] };
+      const report = {
+        synced: totalSynced,
+        failed: totalFailed,
+        total: 0,
+        failures: [{ client_uuid: 'unknown', message: String(error) }],
+      };
       this.lastSyncReport = report;
       return report;
     } finally {
@@ -94,7 +116,11 @@ class SyncService {
   private async syncCycleScans(
     cycleId: number,
     scans: LocalScan[]
-  ): Promise<{ synced: number; failed: number; failures: Array<{ client_uuid: string; message: string }> }> {
+  ): Promise<{
+    synced: number;
+    failed: number;
+    failures: Array<{ client_uuid: string; message: string }>;
+  }> {
     if (!scans.length) return { synced: 0, failed: 0, failures: [] };
     let synced = 0;
     let failed = 0;
@@ -113,10 +139,14 @@ class SyncService {
 
     try {
       const res = await this.retryRequest(() => ApiService.bulkStoreScan(cycleId, payload));
-      if (res && Array.isArray((res as any).results)) {
-        for (const r of (res as any).results) {
-          if (r.status === 'created' || r.status === 'duplicate') {
+      const response = res as BulkStoreScanResponse;
+      if (response && Array.isArray(response.results)) {
+        for (const r of response.results) {
+          if (r.status === 'created') {
             await ScanQueueService.markSynced(r.client_uuid);
+            synced += 1;
+          } else if (r.status === 'duplicate') {
+            await ScanQueueService.deleteScan(r.client_uuid);
             synced += 1;
           } else if (r.status === 'error') {
             const msg = r.message || 'Server reported error';
@@ -139,7 +169,8 @@ class SyncService {
       const details = axios.isAxiosError(error) ? error.response?.data : undefined;
       const msg =
         error instanceof Error
-          ? `${error.message}${status ? ` (HTTP ${status})` : ''}${details ? `: ${JSON.stringify(details)}` : ''}`
+          ? `${error.message}${status ? ` (HTTP ${status})` : ''}${details ? `: ${JSON.stringify(details)}` : ''
+          }`
           : 'Unknown';
 
       for (const s of scans) {
@@ -166,7 +197,12 @@ class SyncService {
     }
   }
 
-  async manualSync(): Promise<{ synced: number; failed: number; total: number; failures: Array<{ client_uuid: string; message: string }> }> {
+  async manualSync(): Promise<{
+    synced: number;
+    failed: number;
+    total: number;
+    failures: Array<{ client_uuid: string; message: string }>;
+  }> {
     return this.syncPendingScans();
   }
 

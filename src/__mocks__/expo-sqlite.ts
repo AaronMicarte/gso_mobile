@@ -129,6 +129,19 @@ function getRows(sql: string, params: unknown[] = []): Row[] {
     return rows.map(cloneRow);
   }
 
+  if (
+    sql.includes('WHERE cycle_id = ? AND inventory_detail_id = ? ORDER BY created_at DESC LIMIT 1')
+  ) {
+    const cycleId = Number(params[0]);
+    const inventoryDetailId = Number(params[1]);
+    rows = rows.filter(
+      (row) =>
+        Number(row.cycle_id) === cycleId && Number(row.inventory_detail_id) === inventoryDetailId
+    );
+    rows.sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+    return rows.slice(0, 1).map(cloneRow);
+  }
+
   if (sql.includes('SELECT * FROM scan_queue ORDER BY created_at DESC')) {
     rows.sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
     return rows.map(cloneRow);
@@ -155,6 +168,10 @@ function getRows(sql: string, params: unknown[] = []): Row[] {
 }
 
 class MockDatabase {
+  async runAsync(sql: string, params: unknown[] = []): Promise<void> {
+    return this.execAsync(sql, params);
+  }
+
   async execAsync(sql: string, params: unknown[] = []): Promise<void> {
     if (sql.includes('INSERT INTO scan_queue')) {
       applyInsert(params);

@@ -91,10 +91,16 @@ function resolveGroupStatus(scans: LocalScan[]): LocalScan['status'] {
 
 function buildGroupKey(scan: LocalScan): string {
   return [
+    // Primary grouping by RPC type, article and description
     scan.rpc_type ?? '',
     scan.article ?? '',
     scan.description ?? '',
-    scan.property_id ?? '',
+    // Include accountable officer, brand/model/serial when available so identical assets group together
+    scan.accountable_officer ?? '',
+    // Some scans may carry Brand/ModelNumber/SerialNumber when enriched; include defensively
+    (scan as unknown as Record<string, unknown>).Brand ?? '',
+    (scan as unknown as Record<string, unknown>).ModelNumber ?? '',
+    (scan as unknown as Record<string, unknown>).SerialNumber ?? '',
     scan.unit_of_measure ?? '',
     scan.unit_value ?? '',
   ]
@@ -113,6 +119,11 @@ function buildPropertyPreview(scans: LocalScan[]): string {
 
   if (propertyNumbers.length === 1) {
     return propertyNumbers[0];
+  }
+
+  // If a reasonable number of property numbers, show them all inline; otherwise show abbreviated preview
+  if (propertyNumbers.length <= 9) {
+    return propertyNumbers.join(', ');
   }
 
   return `${propertyNumbers[0]} + ${propertyNumbers.length - 1} more`;
@@ -290,6 +301,29 @@ function QueueScreen(): React.JSX.Element {
         },
       },
     ]);
+  }
+
+  async function handleDeleteScan(scan: LocalScan): Promise<void> {
+    Alert.alert(
+      'Delete Scan',
+      `Delete ${scan.property_number?.trim() || `detail ${scan.inventory_detail_id}`
+      } from the queue?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await ScanQueueService.deleteScan(scan.client_uuid);
+              await loadScans();
+            } catch {
+              Alert.alert('Error', 'Failed to delete scan');
+            }
+          },
+        },
+      ]
+    );
   }
 
   async function handleRetryGroup(): Promise<void> {
@@ -505,6 +539,14 @@ function QueueScreen(): React.JSX.Element {
                       {scan.error_message ? (
                         <Text style={styles.detailCardError}>{scan.error_message}</Text>
                       ) : null}
+                      <View style={styles.detailCardActions}>
+                        <TouchableOpacity
+                          style={[styles.detailActionBtn, styles.detailDeleteBtn]}
+                          onPress={() => void handleDeleteScan(scan)}
+                        >
+                          <Text style={styles.detailActionText}>Delete this scan</Text>
+                        </TouchableOpacity>
+                      </View>
                     </View>
                   ))}
                 </View>
@@ -701,6 +743,15 @@ const styles = StyleSheet.create({
   detailCardMeta: { marginTop: 4, fontSize: 12, color: '#9bb0d2' },
   detailCardLine: { marginTop: 8, fontSize: 13, color: '#dbeafe' },
   detailCardError: { marginTop: 8, fontSize: 13, color: '#fb7185' },
+  detailCardActions: { marginTop: 12, flexDirection: 'row', justifyContent: 'flex-end' },
+  detailActionBtn: {
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    alignItems: 'center',
+  },
+  detailActionText: { color: '#fff', fontSize: 12, fontWeight: '800' },
+  detailDeleteBtn: { backgroundColor: '#991b1b' },
 
   modalActions: { marginTop: 16, flexDirection: 'row', gap: 10 },
   closeBtn: {

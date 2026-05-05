@@ -5,7 +5,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import ApiService from '../../shared/services/apiService';
 import ScanQueueService from '../../inventory/services/scanQueueService';
 import AuthService from '../../auth/services/authService';
-import { BulkScanPayload, Condition, PreviewScanResponse } from '../../../types';
+import { Condition, PreviewScanResponse } from '../../../types';
 
 interface ScannerPreview extends PreviewScanResponse {
     qr_value: string;
@@ -60,26 +60,12 @@ export function useScanner(cycleId: number): UseScannerResult {
         }
     }, [cycleId]);
 
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    useEffect(() => {
-        void requestCameraPermission();
-        void loadConditions();
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        void updateQueueStats();
-    }, [cycleId, updateQueueStats]);
-
-    useFocusEffect(
-        useCallback(() => {
-            void updateQueueStats();
-        }, [updateQueueStats])
-    );
-
-    async function requestCameraPermission(): Promise<void> {
+    const requestCameraPermission = useCallback(async (): Promise<void> => {
         const { status } = await Camera.requestCameraPermissionsAsync();
         setHasPermission(status === 'granted');
-    }
+    }, []);
 
-    async function loadConditions(): Promise<void> {
+    const loadConditions = useCallback(async (): Promise<void> => {
         try {
             const conds = await ApiService.getConditions();
             setConditions(conds);
@@ -87,7 +73,26 @@ export function useScanner(cycleId: number): UseScannerResult {
         } catch (error) {
             console.error('Failed to load conditions:', error);
         }
-    }
+    }, []);
+
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    useEffect(() => {
+        const initialLoad = setTimeout(() => {
+            void requestCameraPermission();
+            void loadConditions();
+            void updateQueueStats();
+        }, 0);
+
+        return () => {
+            clearTimeout(initialLoad);
+        };
+    }, [cycleId, loadConditions, requestCameraPermission, updateQueueStats]);
+
+    useFocusEffect(
+        useCallback(() => {
+            void updateQueueStats();
+        }, [updateQueueStats])
+    );
 
     const refreshScanner = useCallback(async (): Promise<void> => {
         await Promise.all([loadConditions(), updateQueueStats()]);
@@ -100,12 +105,15 @@ export function useScanner(cycleId: number): UseScannerResult {
         setLoading(true);
 
         try {
-            console.debug('[useScanner] previewScan request', { cycleId, qr_value: result.data });
             const response = await ApiService.previewScan(cycleId, result.data);
-            const unscannedIds = response.candidates.filter((candidate) => !candidate.is_scanned).map((candidate) => candidate.inventory_detail_id);
+            const unscannedIds = response.candidates
+                .filter((candidate) => !candidate.is_scanned)
+                .map((candidate) => candidate.inventory_detail_id);
             const defaultSelection = unscannedIds.includes(response.asset.inventory_detail_id)
                 ? [response.asset.inventory_detail_id]
-                : (unscannedIds[0] ? [unscannedIds[0]] : []);
+                : unscannedIds[0]
+                    ? [unscannedIds[0]]
+                    : [];
 
             setPreview({
                 qr_value: result.data,
@@ -121,7 +129,9 @@ export function useScanner(cycleId: number): UseScannerResult {
             const err: any = error;
             if (err && err.response) {
                 const status = err.response.status;
-                const message = (err.response.data && err.response.data.message) || `Request failed with status code ${status}`;
+                const message =
+                    (err.response.data && err.response.data.message) ||
+                    `Request failed with status code ${status}`;
                 Alert.alert('Preview failed', message);
             } else if (err && err.message) {
                 Alert.alert('Preview failed', err.message);
@@ -141,12 +151,15 @@ export function useScanner(cycleId: number): UseScannerResult {
         setLoading(true);
 
         try {
-            console.debug('[useScanner] previewScan (manual) request', { cycleId, qr_value: qrValue });
             const response = await ApiService.previewScan(cycleId, qrValue, { property_number: qrValue });
-            const unscannedIds = response.candidates.filter((candidate) => !candidate.is_scanned).map((candidate) => candidate.inventory_detail_id);
+            const unscannedIds = response.candidates
+                .filter((candidate) => !candidate.is_scanned)
+                .map((candidate) => candidate.inventory_detail_id);
             const defaultSelection = unscannedIds.includes(response.asset.inventory_detail_id)
                 ? [response.asset.inventory_detail_id]
-                : (unscannedIds[0] ? [unscannedIds[0]] : []);
+                : unscannedIds[0]
+                    ? [unscannedIds[0]]
+                    : [];
 
             setPreview({
                 qr_value: qrValue,
@@ -161,7 +174,9 @@ export function useScanner(cycleId: number): UseScannerResult {
             const err: any = error;
             if (err && err.response) {
                 const status = err.response.status;
-                const message = (err.response.data && err.response.data.message) || `Request failed with status code ${status}`;
+                const message =
+                    (err.response.data && err.response.data.message) ||
+                    `Request failed with status code ${status}`;
                 Alert.alert('Preview failed', message);
             } else if (err && err.message) {
                 Alert.alert('Preview failed', err.message);
@@ -183,17 +198,33 @@ export function useScanner(cycleId: number): UseScannerResult {
         try {
             const deviceId = await AuthService.getOrCreateDeviceId();
             const user = await AuthService.getUser();
+            const uniqueSelectedInventoryDetailIds = Array.from(
+                new Set(selectedInventoryDetailIds)
+            ).filter((id) => id > 0);
 
             // For offline queue, create one LocalScan row per selected inventory_detail_id
             const cycleToUse = toPreviewCycleId(preview, cycleId);
             const now = new Date().toISOString();
 
-            for (const detailId of selectedInventoryDetailIds) {
-                const clientUuid = `${preview.qr_value}-${detailId}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+            // Build a map of inventory_detail_id to candidate for quick lookup of correct property_number
+            const candidateMap = new Map(
+                (preview.candidates ?? []).map((candidate) => [candidate.inventory_detail_id, candidate])
+            );
+
+            for (const detailId of uniqueSelectedInventoryDetailIds) {
+                const clientUuid = `${preview.qr_value}-${detailId}-${Date.now()}-${Math.floor(
+                    Math.random() * 1000
+                )}`;
+
+                // Look up the specific candidate for this detail ID to get the correct property number
+                const candidate = candidateMap.get(detailId);
+                const propertyNumber = candidate?.property_number ?? preview.asset?.property_number ?? null;
+                const propertyId = candidate?.property_id ?? preview.asset?.property_id ?? null;
+
                 await ScanQueueService.addScan({
                     cycle_id: cycleToUse,
                     inventory_detail_id: detailId,
-                    property_id: preview.asset?.property_id ?? null,
+                    property_id: propertyId,
                     condition_id: selectedCondition,
                     scanned_at: now,
                     remarks: remarks.trim() || null,
@@ -203,7 +234,7 @@ export function useScanner(cycleId: number): UseScannerResult {
                     // Asset details
                     article: preview.asset?.article ?? null,
                     description: preview.asset?.description ?? null,
-                    property_number: preview.asset?.property_number ?? null,
+                    property_number: propertyNumber,
                     unit_of_measure: preview.asset?.unit_of_measure ?? null,
                     unit_value: preview.asset?.unit_value ?? null,
                     accountable_officer: preview.asset?.accountable_officer ?? null,

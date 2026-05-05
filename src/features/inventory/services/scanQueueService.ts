@@ -19,6 +19,46 @@ interface QueueStats {
     failed: number;
 }
 
+interface ScanQueueColumnInfo {
+    name?: unknown;
+}
+
+interface AddScanInput {
+    cycle_id?: number;
+    cycleId?: number;
+    inventory_detail_id?: number;
+    inventoryDetailId?: number;
+    scanned_at?: string;
+    scannedAt?: string;
+    condition_id?: number;
+    conditionId?: number;
+    device_id?: string;
+    deviceId?: string;
+    user_id?: number;
+    userId?: number;
+    property_id?: number | null;
+    propertyId?: number | null;
+    remarks?: string | null;
+    remark?: string | null;
+    article?: string | null;
+    description?: string | null;
+    property_number?: string | null;
+    propertyNumber?: string | null;
+    unit_of_measure?: string | null;
+    unitOfMeasure?: string | null;
+    unit_value?: number | null;
+    unitValue?: number | null;
+    accountable_officer?: string | null;
+    accountableOfficer?: string | null;
+    condition_name?: string | null;
+    conditionName?: string | null;
+    rpc_type?: string | null;
+    rpcType?: string | null;
+    id?: string;
+    client_uuid?: string;
+    clientUuid?: string;
+}
+
 function createClientUuid(): string {
     const timestamp = Date.now().toString(16);
     const randomA = Math.random().toString(16).slice(2, 10);
@@ -28,51 +68,51 @@ function createClientUuid(): string {
 
 class ScanQueueService {
     private db: DatabaseConnection | null = null;
+    private isInitialized = false;
 
-    private isStaleDatabaseError(error: unknown): boolean {
-        const message = error instanceof Error ? error.message : String(error);
-        return message.includes('NativeDatabase.prepareAsync') || message.includes('NullPointerException');
+    private async ensureInitialized(): Promise<void> {
+        if (this.isInitialized && this.db) {
+            return;
+        }
+        await this.init();
     }
 
     private async runWithDatabase<T>(operation: (db: DatabaseConnection) => Promise<T>): Promise<T> {
-        if (!this.db) {
-            await this.init();
-        }
+        await this.ensureInitialized();
 
         if (!this.db) {
             throw new Error('Database not initialized');
         }
 
-        let lastError: unknown;
+        // SQLite wrapper now handles all stale handle recovery internally
+        // No need for retry logic here
+        return operation(this.db);
+    }
 
-        for (let attempt = 0; attempt < 2; attempt += 1) {
-            try {
-                return await operation(this.db);
-            } catch (error) {
-                lastError = error;
+    private async getScanByCycleAndDetail(
+        cycleId: number,
+        inventoryDetailId: number
+    ): Promise<LocalScan | null> {
+        const result = await this.runWithDatabase((db) =>
+            db.getAllAsync<LocalScan>(
+                `SELECT * FROM scan_queue WHERE cycle_id = ? AND inventory_detail_id = ? ORDER BY created_at DESC LIMIT 1`,
+                [cycleId, inventoryDetailId]
+            )
+        );
 
-                if (!this.isStaleDatabaseError(error)) {
-                    throw error;
-                }
-
-                console.warn('[ScanQueueService] Reinitializing sqlite after native handle error');
-                this.db = null;
-                await this.init();
-
-                if (!this.db) {
-                    throw error;
-                }
-            }
-        }
-
-        throw lastError instanceof Error ? lastError : new Error('Database operation failed after reconnect');
+        return result[0] ?? null;
     }
 
     async init(): Promise<void> {
+        if (this.isInitialized && this.db) {
+            return;
+        }
+
         // open a runtime promisified sqlite client
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         this.db = await openDatabaseAsync(DB_NAME as string);
         await this.createTables();
+        this.isInitialized = true;
     }
 
     async initializeDatabase(): Promise<void> {
@@ -104,14 +144,14 @@ class ScanQueueService {
 
             CREATE INDEX IF NOT EXISTS idx_status ON scan_queue(status);
             CREATE INDEX IF NOT EXISTS idx_cycle_id ON scan_queue(cycle_id);
+            CREATE INDEX IF NOT EXISTS idx_cycle_inventory_detail_id ON scan_queue(cycle_id, inventory_detail_id);
             CREATE INDEX IF NOT EXISTS idx_created_at ON scan_queue(created_at);
         `);
 
         // Migration: add any missing asset-detail columns to existing table
         // Query current columns
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const cols = await (this.db as any).getAllAsync("PRAGMA table_info('scan_queue')");
-        const existing = new Set<string>((cols || []).map((c: any) => String(c.name)));
+        const cols = await this.db.getAllAsync<ScanQueueColumnInfo>("PRAGMA table_info('scan_queue')");
+        const existing = new Set<string>((cols || []).map((column) => String(column.name)));
 
         const needed: Array<{ name: string; def: string }> = [
             { name: 'article', def: 'article TEXT' },
@@ -139,7 +179,7 @@ class ScanQueueService {
 
     async addScan(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        maybeObj: any,
+        maybeObj: AddScanInput | number,
         inventoryDetailId?: number,
         conditionId?: number,
         deviceId?: string,
@@ -162,6 +202,8 @@ class ScanQueueService {
         let accountableOfficer: string | null = null;
         let conditionName: string | null = null;
         let rpcType: string | null = null;
+        let providedId: string | null = null;
+        let providedClientUuid: string | null = null;
 
         if (typeof maybeObj === 'object' && maybeObj !== null && !Array.isArray(maybeObj)) {
             cycleId = maybeObj.cycle_id || maybeObj.cycleId || 0;
@@ -179,6 +221,14 @@ class ScanQueueService {
             accountableOfficer = maybeObj.accountable_officer || maybeObj.accountableOfficer || null;
             conditionName = maybeObj.condition_name || maybeObj.conditionName || null;
             rpcType = maybeObj.rpc_type || maybeObj.rpcType || null;
+            providedId =
+                typeof maybeObj.id === 'string' && maybeObj.id.trim() ? maybeObj.id.trim() : null;
+            providedClientUuid =
+                typeof maybeObj.client_uuid === 'string' && maybeObj.client_uuid.trim()
+                    ? maybeObj.client_uuid.trim()
+                    : typeof maybeObj.clientUuid === 'string' && maybeObj.clientUuid.trim()
+                        ? maybeObj.clientUuid.trim()
+                        : null;
         } else {
             cycleId = maybeObj as number;
             invId = inventoryDetailId || 0;
@@ -189,8 +239,15 @@ class ScanQueueService {
             rem = remarks || null;
         }
 
-        const id = createClientUuid();
-        const clientUuid = createClientUuid();
+        if (cycleId > 0 && invId > 0) {
+            const existingScan = await this.getScanByCycleAndDetail(cycleId, invId);
+            if (existingScan) {
+                return existingScan;
+            }
+        }
+
+        const id = providedId ?? createClientUuid();
+        const clientUuid = providedClientUuid ?? createClientUuid();
         const now = new Date().toISOString();
 
         const scan: LocalScan = {
@@ -267,7 +324,10 @@ class ScanQueueService {
         }
 
         const result = await this.runWithDatabase((db) =>
-            db.getAllAsync(`SELECT * FROM scan_queue WHERE status = 'pending' ORDER BY created_at ASC LIMIT ?`, [limit])
+            db.getAllAsync(
+                `SELECT * FROM scan_queue WHERE status = 'pending' ORDER BY created_at ASC LIMIT ?`,
+                [limit]
+            )
         );
 
         return (result || []) as unknown as LocalScan[];
@@ -294,12 +354,60 @@ class ScanQueueService {
     }
 
     async deleteScan(clientUuid: string): Promise<void> {
+        // First, fetch the local scan record so we can attempt to remove it from the backend if needed
+        const rows = await this.runWithDatabase((db) =>
+            db.getAllAsync(`SELECT * FROM scan_queue WHERE client_uuid = ? LIMIT 1`, [clientUuid])
+        );
+
+        const scan = (rows && rows.length > 0 ? (rows[0] as unknown as LocalScan) : null);
+
+        if (scan) {
+            // If the scan was already synced to the server, try to find and delete the corresponding remote record
+            if (scan.status === 'synced' || scan.status === 'syncing') {
+                try {
+                    let page = 1;
+                    let lastPage = 1;
+
+                    do {
+                        // Request remote scans for the cycle in pages and try to locate the record matching inventory_detail_id
+                        const response = await ApiService.getRpcInventoryCycleScans(scan.cycle_id, {
+                            page,
+                            per_page: 100,
+                        });
+
+                        for (const remote of response.data) {
+                            if (remote.inventory_detail_id === scan.inventory_detail_id) {
+                                try {
+                                    await ApiService.deleteRpcScan(remote.id);
+                                } catch (err) {
+                                    // Non-fatal: log and continue. We still remove local record to keep UI consistent.
+                                    console.warn('[ScanQueueService] Failed to delete remote scan', remote.id, err);
+                                }
+                                // Found and attempted delete; break out
+                                page = lastPage + 1;
+                                break;
+                            }
+                        }
+
+                        lastPage = response.last_page || 1;
+                        page += 1;
+                    } while (page <= lastPage);
+                } catch (err) {
+                    console.warn('[ScanQueueService] Error while attempting remote delete:', err);
+                }
+            }
+        }
+
+        // Always remove the local record
         await this.runWithDatabase((db) => db.execAsync(`DELETE FROM scan_queue WHERE client_uuid = ?`, [clientUuid]));
     }
 
     async markSynced(clientUuid: string): Promise<void> {
         await this.runWithDatabase((db) =>
-            db.execAsync(`UPDATE scan_queue SET status = 'synced', error_message = NULL WHERE client_uuid = ?`, [clientUuid])
+            db.execAsync(
+                `UPDATE scan_queue SET status = 'synced', error_message = NULL WHERE client_uuid = ?`,
+                [clientUuid]
+            )
         );
     }
 
@@ -327,14 +435,12 @@ class ScanQueueService {
                 const isRemote = remoteDetailIds.has(scan.inventory_detail_id);
 
                 if (!isRemote) {
-
                     toDelete.push(scan.client_uuid);
                 }
             }
 
             // Execute all deletes in parallel, with a tiny delay to ensure DB flush
             if (toDelete.length > 0) {
-
                 await Promise.all(toDelete.map((uuid) => this.deleteScan(uuid)));
                 // Small delay to ensure SQLite writes are persisted
                 await new Promise((r) => setTimeout(r, 50));
@@ -379,15 +485,17 @@ class ScanQueueService {
         }
 
         if (typeof cycleId === 'number') {
-            const stats = await this.runWithDatabase((db) => db.getAllAsync<StatsRow>(
-                `SELECT
+            const stats = await this.runWithDatabase((db) =>
+                db.getAllAsync<StatsRow>(
+                    `SELECT
         COUNT(*) as total,
         SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending,
         SUM(CASE WHEN status = 'synced' THEN 1 ELSE 0 END) as synced,
         SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed
       FROM scan_queue WHERE cycle_id = ?`,
-                [cycleId]
-            ));
+                    [cycleId]
+                )
+            );
             if (stats && stats.length > 0) {
                 return {
                     total: stats[0].total || 0,
@@ -397,15 +505,17 @@ class ScanQueueService {
                 };
             }
         } else {
-            const stats = await this.runWithDatabase((db) => db.getAllAsync<StatsRow>(
-                `SELECT
+            const stats = await this.runWithDatabase((db) =>
+                db.getAllAsync<StatsRow>(
+                    `SELECT
         COUNT(*) as total,
         SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending,
         SUM(CASE WHEN status = 'synced' THEN 1 ELSE 0 END) as synced,
         SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed
       FROM scan_queue`,
-                []
-            ));
+                    []
+                )
+            );
 
             if (stats && stats.length > 0) {
                 return {
@@ -425,19 +535,26 @@ class ScanQueueService {
         cutoffDate.setDate(cutoffDate.getDate() - daysOld);
 
         await this.runWithDatabase((db) =>
-            db.execAsync(`DELETE FROM scan_queue WHERE cycle_id = ? AND status = 'synced' AND created_at < ?`, [cycleId, cutoffDate.toISOString()])
+            db.execAsync(
+                `DELETE FROM scan_queue WHERE cycle_id = ? AND status = 'synced' AND created_at < ?`,
+                [cycleId, cutoffDate.toISOString()]
+            )
         );
     }
 
     async getAllScans(cycleId?: number): Promise<LocalScan[]> {
         if (typeof cycleId === 'number') {
             const result = await this.runWithDatabase((db) =>
-                db.getAllAsync(`SELECT * FROM scan_queue WHERE cycle_id = ? ORDER BY created_at DESC`, [cycleId])
+                db.getAllAsync(`SELECT * FROM scan_queue WHERE cycle_id = ? ORDER BY created_at DESC`, [
+                    cycleId,
+                ])
             );
             return (result || []) as unknown as LocalScan[];
         }
 
-        const result = await this.runWithDatabase((db) => db.getAllAsync(`SELECT * FROM scan_queue ORDER BY created_at DESC`, []));
+        const result = await this.runWithDatabase((db) =>
+            db.getAllAsync(`SELECT * FROM scan_queue ORDER BY created_at DESC`, [])
+        );
 
         return (result || []) as unknown as LocalScan[];
     }

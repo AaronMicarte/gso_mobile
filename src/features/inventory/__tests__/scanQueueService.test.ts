@@ -146,6 +146,36 @@ describe('Offline Sync Flow', () => {
 
       expect(duplicateCheck.length).toBeGreaterThanOrEqual(1);
     });
+
+    it('should not create a second row for the same cycle and inventory detail', async () => {
+      const firstScan = await ScanQueueService.addScan({
+        cycle_id: 1,
+        inventory_detail_id: 100,
+        property_id: 1,
+        condition_id: 1,
+        scanned_at: new Date().toISOString(),
+        device_id: 'device-001',
+        client_uuid: 'client-uuid-1',
+      });
+
+      const secondScan = await ScanQueueService.addScan({
+        cycle_id: 1,
+        inventory_detail_id: 100,
+        property_id: 1,
+        condition_id: 2,
+        scanned_at: new Date().toISOString(),
+        device_id: 'device-001',
+        client_uuid: 'client-uuid-2',
+      });
+
+      const allScans = await ScanQueueService.getAllScans();
+      const duplicateRows = allScans.filter(
+        (scan) => scan.cycle_id === 1 && scan.inventory_detail_id === 100
+      );
+
+      expect(duplicateRows.length).toBe(1);
+      expect(secondScan.client_uuid).toBe(firstScan.client_uuid);
+    });
   });
 
   describe('Retry Logic', () => {
