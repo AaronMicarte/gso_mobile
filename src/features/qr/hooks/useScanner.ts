@@ -212,10 +212,6 @@ export function useScanner(cycleId: number): UseScannerResult {
             );
 
             for (const detailId of uniqueSelectedInventoryDetailIds) {
-                const clientUuid = `${preview.qr_value}-${detailId}-${Date.now()}-${Math.floor(
-                    Math.random() * 1000
-                )}`;
-
                 // Look up the specific candidate for this detail ID to get the correct property number
                 const candidate = candidateMap.get(detailId);
                 const propertyNumber = candidate?.property_number ?? preview.asset?.property_number ?? null;
@@ -230,7 +226,6 @@ export function useScanner(cycleId: number): UseScannerResult {
                     remarks: remarks.trim() || null,
                     device_id: deviceId,
                     user_id: user?.UserID ?? 0,
-                    client_uuid: clientUuid,
                     // Asset details
                     article: preview.asset?.article ?? null,
                     description: preview.asset?.description ?? null,
@@ -239,6 +234,10 @@ export function useScanner(cycleId: number): UseScannerResult {
                     unit_value: preview.asset?.unit_value ?? null,
                     accountable_officer: preview.asset?.accountable_officer ?? null,
                     rpc_type: preview.asset?.rpc_type ?? null,
+                    // include additional asset identifiers if server provided them
+                    Brand: (preview.asset as any)?.Brand ?? (preview.asset as any)?.BrandName ?? null,
+                    ModelNumber: (preview.asset as any)?.ModelNumber ?? null,
+                    SerialNumber: (preview.asset as any)?.SerialNumber ?? null,
                 });
             }
 

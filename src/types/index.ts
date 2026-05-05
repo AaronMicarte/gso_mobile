@@ -308,6 +308,10 @@ export interface LocalScan {
     accountable_officer?: string | null;
     condition_name?: string | null;
     rpc_type?: 'RPCPPE' | 'RPCSEP';
+    Brand?: string | null;
+    ModelNumber?: string | null;
+    SerialNumber?: string | null;
+    remote_scan_id?: number | null;
 }
 
 export interface BulkScanPayload {

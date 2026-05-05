@@ -57,13 +57,27 @@ interface AddScanInput {
     id?: string;
     client_uuid?: string;
     clientUuid?: string;
+    Brand?: string | null;
+    ModelNumber?: string | null;
+    SerialNumber?: string | null;
 }
 
 function createClientUuid(): string {
+    // Legacy format used by existing data: <hex timestamp>-<8 hex>-<8 hex>
+    // Example: 19de7d157dd-9af8c236-bdc52b41
     const timestamp = Date.now().toString(16);
     const randomA = Math.random().toString(16).slice(2, 10);
     const randomB = Math.random().toString(16).slice(2, 10);
     return `${timestamp}-${randomA}-${randomB}`;
+}
+
+function sanitizeClientUuid(u?: string | null): string | null {
+    if (!u || typeof u !== 'string') return null;
+    const trimmed = u.trim();
+    if (!trimmed) return null;
+    // Backend validation currently enforces max:36
+    if (trimmed.length > 36) return null;
+    return trimmed;
 }
 
 class ScanQueueService {
@@ -162,6 +176,10 @@ class ScanQueueService {
             { name: 'accountable_officer', def: 'accountable_officer TEXT' },
             { name: 'condition_name', def: 'condition_name TEXT' },
             { name: 'rpc_type', def: 'rpc_type TEXT' },
+            { name: 'Brand', def: 'Brand TEXT' },
+            { name: 'ModelNumber', def: 'ModelNumber TEXT' },
+            { name: 'SerialNumber', def: 'SerialNumber TEXT' },
+            { name: 'remote_scan_id', def: 'remote_scan_id INTEGER' },
         ];
 
         for (const col of needed) {
@@ -174,6 +192,40 @@ class ScanQueueService {
                     console.error(`Failed to add column ${col.name} to scan_queue:`, e);
                 }
             }
+        }
+
+        await this.normalizeInvalidClientUuids();
+    }
+
+    private async normalizeInvalidClientUuids(): Promise<void> {
+        if (!this.db) return;
+
+        interface InvalidUuidRow {
+            id: string;
+            client_uuid: string | null;
+        }
+
+        const invalidRows = await this.db.getAllAsync<InvalidUuidRow>(
+            `SELECT id, client_uuid
+             FROM scan_queue
+             WHERE client_uuid IS NULL OR TRIM(client_uuid) = '' OR LENGTH(client_uuid) > 36`
+        );
+
+        for (const row of invalidRows) {
+            let nextUuid = createClientUuid();
+            // Best-effort collision avoidance in local queue
+            // eslint-disable-next-line no-constant-condition
+            while (true) {
+                const existing = await this.db.getAllAsync<{ count: number }>(
+                    `SELECT COUNT(*) as count FROM scan_queue WHERE client_uuid = ? AND id != ?`,
+                    [nextUuid, row.id]
+                );
+                const count = Number(existing?.[0]?.count ?? 0);
+                if (count === 0) break;
+                nextUuid = createClientUuid();
+            }
+
+            await this.db.execAsync(`UPDATE scan_queue SET client_uuid = ? WHERE id = ?`, [nextUuid, row.id]);
         }
     }
 
@@ -202,6 +254,9 @@ class ScanQueueService {
         let accountableOfficer: string | null = null;
         let conditionName: string | null = null;
         let rpcType: string | null = null;
+        let brand: string | null = null;
+        let modelNumber: string | null = null;
+        let serialNumber: string | null = null;
         let providedId: string | null = null;
         let providedClientUuid: string | null = null;
 
@@ -215,6 +270,9 @@ class ScanQueueService {
             rem = maybeObj.remarks || maybeObj.remark || null;
             article = maybeObj.article || null;
             description = maybeObj.description || null;
+            brand = (maybeObj as any).Brand || null;
+            modelNumber = (maybeObj as any).ModelNumber || null;
+            serialNumber = (maybeObj as any).SerialNumber || null;
             propertyNumber = maybeObj.property_number || maybeObj.propertyNumber || null;
             unitOfMeasure = maybeObj.unit_of_measure || maybeObj.unitOfMeasure || null;
             unitValue = maybeObj.unit_value || maybeObj.unitValue || null;
@@ -223,12 +281,13 @@ class ScanQueueService {
             rpcType = maybeObj.rpc_type || maybeObj.rpcType || null;
             providedId =
                 typeof maybeObj.id === 'string' && maybeObj.id.trim() ? maybeObj.id.trim() : null;
-            providedClientUuid =
+            providedClientUuid = sanitizeClientUuid(
                 typeof maybeObj.client_uuid === 'string' && maybeObj.client_uuid.trim()
-                    ? maybeObj.client_uuid.trim()
+                    ? maybeObj.client_uuid
                     : typeof maybeObj.clientUuid === 'string' && maybeObj.clientUuid.trim()
-                        ? maybeObj.clientUuid.trim()
-                        : null;
+                        ? maybeObj.clientUuid
+                        : null
+            );
         } else {
             cycleId = maybeObj as number;
             invId = inventoryDetailId || 0;
@@ -274,6 +333,9 @@ class ScanQueueService {
             accountable_officer: accountableOfficer,
             condition_name: conditionName,
             rpc_type: rpcType as 'RPCPPE' | 'RPCSEP' | undefined,
+            Brand: brand,
+            ModelNumber: modelNumber,
+            SerialNumber: serialNumber,
         };
 
         await this.runWithDatabase((db) =>
@@ -281,9 +343,9 @@ class ScanQueueService {
                 `INSERT INTO scan_queue (
         id, client_uuid, cycle_id, inventory_detail_id, property_id,
         condition_id, scanned_at, remarks, device_id, user_id, status, created_at,
-        article, description, property_number, unit_of_measure, unit_value,
-        accountable_officer, condition_name, rpc_type
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                                article, description, property_number, unit_of_measure, unit_value,
+                                accountable_officer, condition_name, rpc_type, Brand, ModelNumber, SerialNumber, remote_scan_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                 [
                     scan.id,
                     scan.client_uuid,
@@ -305,6 +367,10 @@ class ScanQueueService {
                     scan.accountable_officer ?? null,
                     scan.condition_name ?? null,
                     scan.rpc_type ?? null,
+                    scan.Brand ?? null,
+                    scan.ModelNumber ?? null,
+                    scan.SerialNumber ?? null,
+                    null,
                 ]
             )
         );
@@ -362,36 +428,39 @@ class ScanQueueService {
         const scan = (rows && rows.length > 0 ? (rows[0] as unknown as LocalScan) : null);
 
         if (scan) {
-            // If the scan was already synced to the server, try to find and delete the corresponding remote record
-            if (scan.status === 'synced' || scan.status === 'syncing') {
+            // If the scan was already synced to the server, try to delete the corresponding remote record
+            if (scan.status === 'synced' || scan.status === 'syncing' || scan.remote_scan_id) {
                 try {
-                    let page = 1;
-                    let lastPage = 1;
+                    if (scan.remote_scan_id) {
+                        // Prefer exact server id when available
+                        await ApiService.deleteRpcScan(scan.remote_scan_id);
+                    } else {
+                        // Fallback: search remote scans by inventory_detail_id
+                        let page = 1;
+                        let lastPage = 1;
 
-                    do {
-                        // Request remote scans for the cycle in pages and try to locate the record matching inventory_detail_id
-                        const response = await ApiService.getRpcInventoryCycleScans(scan.cycle_id, {
-                            page,
-                            per_page: 100,
-                        });
+                        do {
+                            const response = await ApiService.getRpcInventoryCycleScans(scan.cycle_id, {
+                                page,
+                                per_page: 100,
+                            });
 
-                        for (const remote of response.data) {
-                            if (remote.inventory_detail_id === scan.inventory_detail_id) {
-                                try {
-                                    await ApiService.deleteRpcScan(remote.id);
-                                } catch (err) {
-                                    // Non-fatal: log and continue. We still remove local record to keep UI consistent.
-                                    console.warn('[ScanQueueService] Failed to delete remote scan', remote.id, err);
+                            for (const remote of response.data) {
+                                if (remote.inventory_detail_id === scan.inventory_detail_id) {
+                                    try {
+                                        await ApiService.deleteRpcScan(remote.id);
+                                    } catch (err) {
+                                        console.warn('[ScanQueueService] Failed to delete remote scan', remote.id, err);
+                                    }
+                                    page = lastPage + 1;
+                                    break;
                                 }
-                                // Found and attempted delete; break out
-                                page = lastPage + 1;
-                                break;
                             }
-                        }
 
-                        lastPage = response.last_page || 1;
-                        page += 1;
-                    } while (page <= lastPage);
+                            lastPage = response.last_page || 1;
+                            page += 1;
+                        } while (page <= lastPage);
+                    }
                 } catch (err) {
                     console.warn('[ScanQueueService] Error while attempting remote delete:', err);
                 }
@@ -402,13 +471,18 @@ class ScanQueueService {
         await this.runWithDatabase((db) => db.execAsync(`DELETE FROM scan_queue WHERE client_uuid = ?`, [clientUuid]));
     }
 
-    async markSynced(clientUuid: string): Promise<void> {
-        await this.runWithDatabase((db) =>
-            db.execAsync(
-                `UPDATE scan_queue SET status = 'synced', error_message = NULL WHERE client_uuid = ?`,
-                [clientUuid]
-            )
-        );
+    async markSynced(clientUuid: string, remoteScanId?: number | null): Promise<void> {
+        const params: Array<string | number | null> = [clientUuid];
+        let query = `UPDATE scan_queue SET status = 'synced', error_message = NULL`;
+
+        if (typeof remoteScanId === 'number') {
+            query += `, remote_scan_id = ?`;
+            params.unshift(remoteScanId);
+        }
+
+        query += ` WHERE client_uuid = ?`;
+
+        await this.runWithDatabase((db) => db.execAsync(query, params));
     }
 
     async markFailed(clientUuid: string, errorMessage: string): Promise<void> {

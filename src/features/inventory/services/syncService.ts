@@ -12,6 +12,7 @@ interface BulkStoreScanResult {
   status?: 'created' | 'duplicate' | 'error' | string;
   client_uuid: string;
   message?: string;
+  scan_id?: number;
 }
 
 interface BulkStoreScanResponse {
@@ -143,10 +144,16 @@ class SyncService {
       if (response && Array.isArray(response.results)) {
         for (const r of response.results) {
           if (r.status === 'created') {
-            await ScanQueueService.markSynced(r.client_uuid);
+            // Store remote scan id when provided
+            await ScanQueueService.markSynced(r.client_uuid, (r as any).scan_id ?? null);
             synced += 1;
           } else if (r.status === 'duplicate') {
-            await ScanQueueService.deleteScan(r.client_uuid);
+            // If server returned scan id for duplicate, persist it; otherwise remove local record
+            if ((r as any).scan_id) {
+              await ScanQueueService.markSynced(r.client_uuid, (r as any).scan_id);
+            } else {
+              await ScanQueueService.deleteScan(r.client_uuid);
+            }
             synced += 1;
           } else if (r.status === 'error') {
             const msg = r.message || 'Server reported error';
