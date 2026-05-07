@@ -18,6 +18,23 @@ interface CycleSelectScreenProps {
 
 const REFRESH_INTERVAL_MS = 10000;
 
+function formatCycleDate(value: string | null): string {
+    if (!value) {
+        return '-';
+    }
+
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+        return '-';
+    }
+
+    return date.toLocaleDateString('en-US', {
+        month: 'long',
+        day: 'numeric',
+        year: 'numeric',
+    });
+}
+
 export function CycleSelectScreen({ onSelectCycle }: CycleSelectScreenProps): React.JSX.Element {
     const [cycles, setCycles] = useState<RpcCycle[]>([]);
     const [loading, setLoading] = useState(false);
@@ -84,6 +101,8 @@ export function CycleSelectScreen({ onSelectCycle }: CycleSelectScreenProps): Re
                 <Text style={styles.cycleLabel}>{item.cycle_label}</Text>
                 <Text style={styles.cycleStatus}>{item.status.toUpperCase()}</Text>
             </View>
+
+            <Text style={styles.cycleDate}>{formatCycleDate(item.started_at)}</Text>
 
             <View style={styles.statsContainer}>
                 <View style={styles.statBox}>
@@ -194,6 +213,7 @@ const styles = StyleSheet.create({
     cycleHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
     cycleLabel: { fontSize: 17, fontWeight: '800', color: '#f8fafc' },
     cycleStatus: { fontSize: 11, fontWeight: '800', color: '#052e16', backgroundColor: '#4ade80', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999 },
+    cycleDate: { marginBottom: 10, fontSize: 12, color: '#9bb0d2' },
     statsContainer: { flexDirection: 'row', justifyContent: 'space-around', borderTopWidth: 1, borderTopColor: '#223252', paddingTop: 10 },
     statBox: { flex: 1, alignItems: 'center' },
     statValue: { fontSize: 22, fontWeight: '900', color: '#93c5fd' },
