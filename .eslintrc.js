@@ -29,6 +29,7 @@ module.exports = {
         '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
         '@typescript-eslint/no-explicit-any': 'warn',
         '@typescript-eslint/explicit-function-return-types': 'off',
+        'react-hooks/set-state-in-effect': 'off',
         'no-console': ['warn', { allow: ['warn', 'error'] }],
         'prettier/prettier': 'warn'
     },

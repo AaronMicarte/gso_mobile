@@ -78,12 +78,6 @@ export function PropertyQrScreen(): React.JSX.Element {
         setHasPermission(status === 'granted');
     };
 
-    React.useEffect(() => {
-        if (scanMode === 'camera') {
-            void requestCameraPermission();
-        }
-    }, [scanMode]);
-
     const loadTarget = async (rawValue: string): Promise<void> => {
         const target = parseQrTarget(rawValue);
         if (!target) {
@@ -167,7 +161,10 @@ export function PropertyQrScreen(): React.JSX.Element {
                     </TouchableOpacity>
                     <TouchableOpacity
                         style={[styles.modeButton, scanMode === 'camera' && styles.modeButtonActive]}
-                        onPress={() => setScanMode('camera')}
+                        onPress={() => {
+                            setScanMode('camera');
+                            void requestCameraPermission();
+                        }}
                     >
                         <Text style={[styles.modeButtonText, scanMode === 'camera' && styles.modeButtonTextActive]}>Camera</Text>
                     </TouchableOpacity>

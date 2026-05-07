@@ -252,6 +252,15 @@ export function ScannedAssetsScreen({ cycleId }: ScannedAssetsScreenProps): Reac
 
         const selectedItems = editingItems.filter((item) => item.included);
         const removedItems = editingItems.filter((item) => !item.included);
+        const selectedById = new Map<number, RpcInventoryScanRecord>(editingGroup.scans.map((scan) => [scan.id, scan]));
+        const changedItems = selectedItems.filter((item) => {
+            const original = selectedById.get(item.scanId);
+            if (!original) {
+                return true;
+            }
+
+            return original.condition_id !== editConditionId || (original.remarks || '') !== editRemarks.trim();
+        });
 
         if (selectedItems.length === 0) {
             Alert.alert('Validation', 'Keep at least one scan in the group.');
@@ -261,7 +270,7 @@ export function ScannedAssetsScreen({ cycleId }: ScannedAssetsScreenProps): Reac
         setSaving(true);
         try {
             await Promise.all([
-                ...selectedItems.map((item) =>
+                ...changedItems.map((item) =>
                     ApiService.updateRpcScan(item.scanId, {
                         condition_id: editConditionId,
                         remarks: editRemarks.trim() || null,

@@ -9,6 +9,7 @@ import {
   PreviewScanResponse,
   RpcCycle,
   RpcInventoryCyclesResponse,
+  RpcInventoryAuditLogPaginated,
   RpcInventoryReportResponse,
   RpcInventoryScansPaginated,
   RpcInventoryScanRecord,
@@ -48,6 +49,7 @@ class ApiService {
 
     this.api.interceptors.request.use(
       (config) => {
+        config.headers['X-Client-Source'] = 'mobile';
         if (this.token) {
           config.headers.Authorization = `Bearer ${this.token}`;
         }
@@ -176,6 +178,17 @@ class ApiService {
 
   async getRpcInventoryReport(cycleId: number): Promise<RpcInventoryReportResponse> {
     const response = await this.api.get<RpcInventoryReportResponse>(`/rpc-inventory/cycles/${cycleId}/report`);
+    return response.data;
+  }
+
+  async getRpcInventoryCycleAuditLogs(
+    cycleId: number,
+    params?: { page?: number; per_page?: number }
+  ): Promise<RpcInventoryAuditLogPaginated> {
+    const response = await this.api.get<RpcInventoryAuditLogPaginated>(
+      `/rpc-inventory/cycles/${cycleId}/audit-logs`,
+      { params }
+    );
     return response.data;
   }
 

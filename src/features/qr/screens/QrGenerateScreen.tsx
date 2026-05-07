@@ -22,7 +22,7 @@ function getDisplayName(property: QrScanAssignedProperty): string {
 export function QrGenerateScreen(): React.JSX.Element {
     const [search, setSearch] = useState('');
     const [missingOnly, setMissingOnly] = useState(false);
-    const [loading, setLoading] = useState(false);
+    const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [rows, setRows] = useState<QrScanAssignedProperty[]>([]);
     const [total, setTotal] = useState(0);
@@ -38,8 +38,7 @@ export function QrGenerateScreen(): React.JSX.Element {
         [search, missingOnly]
     );
 
-    const load = async (): Promise<void> => {
-        setLoading(true);
+    const fetchProperties = async (): Promise<void> => {
         try {
             const response = await ApiService.fetchQrProperties(params);
             setRows(response.data);
@@ -47,15 +46,25 @@ export function QrGenerateScreen(): React.JSX.Element {
         } catch (error) {
             console.error('Failed to load QR properties:', error);
             Alert.alert('Error', 'Failed to load QR properties.');
-        } finally {
-            setLoading(false);
         }
     };
 
     useEffect(() => {
-        void load();
+        void fetchProperties().finally(() => {
+            // eslint-disable-next-line react-hooks/set-state-in-effect
+            setLoading(false);
+        });
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [params.search, params.missing_qr_only]);
+
+    const load = async (): Promise<void> => {
+        setLoading(true);
+        try {
+            await fetchProperties();
+        } finally {
+            setLoading(false);
+        }
+    };
 
     const onRefresh = async (): Promise<void> => {
         setRefreshing(true);

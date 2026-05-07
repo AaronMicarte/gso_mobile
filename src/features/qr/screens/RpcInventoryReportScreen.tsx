@@ -16,26 +16,35 @@ function formatCurrency(value: number): string {
 
 export function RpcInventoryReportScreen({ cycleId }: RpcInventoryReportScreenProps): React.JSX.Element {
     const [report, setReport] = useState<RpcInventoryReportResponse | null>(null);
-    const [loading, setLoading] = useState(false);
+    const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [reportType, setReportType] = useState<RpcType>('RPCPPE');
 
-    const load = async (): Promise<void> => {
-        setLoading(true);
+    const fetchReport = async (): Promise<void> => {
         try {
             const data = await ApiService.getRpcInventoryReport(cycleId);
             setReport(data);
         } catch (error) {
             console.error('Failed to load RPC report:', error);
             setReport(null);
-        } finally {
-            setLoading(false);
         }
     };
 
     useEffect(() => {
-        void load();
+        void fetchReport().finally(() => {
+            // eslint-disable-next-line react-hooks/set-state-in-effect
+            setLoading(false);
+        });
     }, [cycleId]);
+
+    const load = async (): Promise<void> => {
+        setLoading(true);
+        try {
+            await fetchReport();
+        } finally {
+            setLoading(false);
+        }
+    };
 
     const bucket = report ? (reportType === 'RPCPPE' ? report.rpcppe : report.rpcsep) : null;
 
