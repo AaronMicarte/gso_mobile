@@ -330,7 +330,9 @@ export function RpcInventoryAuditScreen({ cycleId }: RpcInventoryAuditScreenProp
                 ) : (
                     logs.map((log) => {
                         const actor = log.performed_by?.FullName || `User ${log.performed_by_user_id}`;
-                        const propertyNumber = log.property_number || log.scan?.property_number || '-';
+                        const details = log.details || {};
+                        const pnums = Array.isArray(details.property_numbers) ? details.property_numbers.filter((v): v is string => typeof v === 'string') : [];
+                        const propertyNumber = pnums.length === 1 ? pnums[0] : (pnums.length > 1 ? 'Batched' : (log.property_number || log.scan?.property_number || '-'));
                         const summary = summarizeAuditLog(log);
 
                         return (
@@ -376,7 +378,13 @@ export function RpcInventoryAuditScreen({ cycleId }: RpcInventoryAuditScreenProp
                                     <Text style={styles.summaryLabel}>User</Text>
                                     <Text style={styles.summaryValue}>{selectedAuditLog.performed_by?.FullName || 'Unknown user'}</Text>
                                     <Text style={styles.summaryLabel}>Property #</Text>
-                                    <Text style={styles.summaryValue}>{selectedAuditLog.property_number || selectedAuditLog.scan?.property_number || 'Not available'}</Text>
+                                    <Text style={styles.summaryValue}>{(() => {
+                                        const details = selectedAuditLog.details || {};
+                                        const pnums = Array.isArray(details.property_numbers) ? details.property_numbers.filter((v): v is string => typeof v === 'string') : [];
+                                        if (pnums.length === 1) return pnums[0];
+                                        if (pnums.length > 1) return 'Batched';
+                                        return selectedAuditLog.property_number || selectedAuditLog.scan?.property_number || 'Not available';
+                                    })()}</Text>
                                     <Text style={styles.summaryLabel}>Source</Text>
                                     <Text style={styles.summaryValue}>{formatDetailValue('source', selectedAuditLog.source ?? (selectedAuditLog.details as any)?.source) || 'Not available'}</Text>
                                 </View>
