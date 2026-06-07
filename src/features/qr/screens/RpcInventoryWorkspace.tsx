@@ -133,7 +133,6 @@ export function RpcInventoryWorkspace({
     if (!selectedCycleId) {
         return <CycleSelectScreen onSelectCycle={handleSelectCycle} />;
     }
-
     return (
         <View style={styles.container}>
             <View style={styles.header}>
@@ -163,30 +162,40 @@ export function RpcInventoryWorkspace({
 
             {/* Content */}
             <View style={styles.content}>
-                {activeTab === 'scanner' && (
-                    <ScannerScreen
-                        cycleId={selectedCycleId}
-                        cycleTotals={{
-                            total: cycleInfo?.scans_count ?? 0,
-                            rpcppe: cycleInfo?.rpcppe_count ?? 0,
-                            rpcsep: cycleInfo?.rpcsep_count ?? 0,
-                        }}
-                    />
-                )}
-                {activeTab === 'assets' && (
-                    <ScannedAssetsScreen cycleId={selectedCycleId} />
-                )}
-                {activeTab === 'report' && (
-                    <RpcInventoryReportScreen cycleId={selectedCycleId} />
-                )}
-                {activeTab === 'audit' && isAdmin && (
-                    <RpcInventoryAuditScreen cycleId={selectedCycleId} />
-                )}
-                {activeTab === 'property-qr' && (
-                    <PropertyQrScreen />
-                )}
-                {activeTab === 'generate-qr' && (
-                    <QrGenerateScreen />
+                {cycleInfo?.status === 'closed' ? (
+                    <View style={styles.closedContainer}>
+                        <Text style={styles.closedText}>
+                            This year's RPCPPE has been closed. If you are an Administrator, you may reopen it through the web application.
+                        </Text>
+                    </View>
+                ) : (
+                    <>
+                        {activeTab === 'scanner' && (
+                            <ScannerScreen
+                                cycleId={selectedCycleId}
+                                cycleTotals={{
+                                    total: cycleInfo?.scans_count ?? 0,
+                                    rpcppe: cycleInfo?.rpcppe_count ?? 0,
+                                    rpcsep: cycleInfo?.rpcsep_count ?? 0,
+                                }}
+                            />
+                        )}
+                        {activeTab === 'assets' && (
+                            <ScannedAssetsScreen cycleId={selectedCycleId} />
+                        )}
+                        {activeTab === 'report' && (
+                            <RpcInventoryReportScreen cycleId={selectedCycleId} />
+                        )}
+                        {activeTab === 'audit' && isAdmin && (
+                            <RpcInventoryAuditScreen cycleId={selectedCycleId} />
+                        )}
+                        {activeTab === 'property-qr' && (
+                            <PropertyQrScreen />
+                        )}
+                        {activeTab === 'generate-qr' && (
+                            <QrGenerateScreen />
+                        )}
+                    </>
                 )}
             </View>
 
@@ -234,4 +243,6 @@ const styles = StyleSheet.create({
     content: { flex: 1 },
     loadingContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#0b1220' },
     loadingText: { marginTop: 12, color: '#9bb0d2', fontWeight: '600' },
+    closedContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 20 },
+    closedText: { color: '#f8fafc', textAlign: 'center', fontSize: 16, lineHeight: 22 },
 });
