@@ -185,6 +185,7 @@ function buildQueueGroups(
 function QueueScreen(): React.JSX.Element {
   const { cycleId } = useAuth();
   const [scans, setScans] = useState<LocalScan[]>([]);
+  const [cycleStatus, setCycleStatus] = useState<string | null>(null);
   const [conditionLookup, setConditionLookup] = useState<Record<number, string>>({});
   const [refreshing, setRefreshing] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -230,6 +231,15 @@ function QueueScreen(): React.JSX.Element {
     const initialLoad = setTimeout(() => {
       void loadConditions();
       void loadScans();
+      void (async () => {
+        try {
+          const resp = await ApiService.listRpcInventoryCycles();
+          const found = resp.data.find((c: any) => c.id === cycleId) ?? null;
+          setCycleStatus(found?.status ?? null);
+        } catch (err) {
+          console.error('[QueueScreen] Failed to load cycle status:', err);
+        }
+      })();
     }, 0);
     const interval = setInterval(() => {
       void loadScans();
@@ -254,6 +264,11 @@ function QueueScreen(): React.JSX.Element {
   }
 
   async function handleManualSync(): Promise<void> {
+    if (cycleStatus === 'closed') {
+      Alert.alert("RPCPPE closed", "This year's RPCPPE has been closed. If you are an Administrator, you may reopen it through the web application.");
+      return;
+    }
+
     setSyncing(true);
     try {
       const result = await SyncService.manualSync();
@@ -279,6 +294,11 @@ function QueueScreen(): React.JSX.Element {
   }
 
   async function handleDeleteGroup(): Promise<void> {
+    if (cycleStatus === 'closed') {
+      Alert.alert("RPCPPE closed", "This year's RPCPPE has been closed. If you are an Administrator, you may reopen it through the web application.");
+      return;
+    }
+
     if (!activeGroup) {
       return;
     }
@@ -304,6 +324,11 @@ function QueueScreen(): React.JSX.Element {
   }
 
   async function handleDeleteScan(scan: LocalScan): Promise<void> {
+    if (cycleStatus === 'closed') {
+      Alert.alert("RPCPPE closed", "This year's RPCPPE has been closed. If you are an Administrator, you may reopen it through the web application.");
+      return;
+    }
+
     Alert.alert(
       'Delete Scan',
       `Delete ${scan.property_number?.trim() || `detail ${scan.inventory_detail_id}`
@@ -327,6 +352,11 @@ function QueueScreen(): React.JSX.Element {
   }
 
   async function handleRetryGroup(): Promise<void> {
+    if (cycleStatus === 'closed') {
+      Alert.alert("RPCPPE closed", "This year's RPCPPE has been closed. If you are an Administrator, you may reopen it through the web application.");
+      return;
+    }
+
     if (!activeGroup) {
       return;
     }
@@ -369,8 +399,11 @@ function QueueScreen(): React.JSX.Element {
     return (
       <TouchableOpacity
         style={styles.groupCard}
-        onPress={() => setActiveGroupKey(item.key)}
-        activeOpacity={0.88}
+        onPress={() => {
+          if (cycleStatus === 'closed') return;
+          setActiveGroupKey(item.key);
+        }}
+        activeOpacity={cycleStatus === 'closed' ? 1 : 0.88}
       >
         <View style={styles.cardRow}>
           <View style={styles.cardLeft}>
@@ -423,20 +456,28 @@ function QueueScreen(): React.JSX.Element {
       </View>
 
       <View style={styles.listWrap}>
-        <FlatList
-          data={groupedScans}
-          renderItem={renderGroup}
-          keyExtractor={(item) => item.key}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={() => void onRefresh()} />
-          }
-          ListEmptyComponent={
-            <View style={styles.emptyBox}>
-              <Text style={styles.emptyText}>No scans yet</Text>
-            </View>
-          }
-          contentContainerStyle={groupedScans.length === 0 ? { flexGrow: 1 } : undefined}
-        />
+        {cycleStatus === 'closed' ? (
+          <View style={styles.closedBox}>
+            <Text style={styles.closedText}>
+              This year's RPCPPE has been closed. If you are an Administrator, you may reopen it through the web application.
+            </Text>
+          </View>
+        ) : (
+          <FlatList
+            data={groupedScans}
+            renderItem={renderGroup}
+            keyExtractor={(item) => item.key}
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={() => void onRefresh()} />
+            }
+            ListEmptyComponent={
+              <View style={styles.emptyBox}>
+                <Text style={styles.emptyText}>No scans yet</Text>
+              </View>
+            }
+            contentContainerStyle={groupedScans.length === 0 ? { flexGrow: 1 } : undefined}
+          />
+        )}
       </View>
 
       <Modal
@@ -581,12 +622,12 @@ function QueueScreen(): React.JSX.Element {
         <TouchableOpacity
           style={styles.syncBtn}
           onPress={() => void handleManualSync()}
-          disabled={syncing}
+          disabled={syncing || cycleStatus === 'closed'}
         >
           {syncing ? (
             <ActivityIndicator color="#fff" />
           ) : (
-            <Text style={styles.syncBtnText}>Manual Sync</Text>
+            <Text style={styles.syncBtnText}>{cycleStatus === 'closed' ? 'RPCPPE Closed' : 'Manual Sync'}</Text>
           )}
         </TouchableOpacity>
       </View>
@@ -792,6 +833,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   syncBtnText: { textAlign: 'center', fontSize: 16, fontWeight: '700', color: '#fff' },
+  closedBox: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: '#334463',
+    backgroundColor: '#111a2d',
+    paddingVertical: 48,
+  },
+  closedText: { fontSize: 16, fontWeight: '600', color: '#f8fafc', textAlign: 'center', paddingHorizontal: 20 },
 });
 
 export default QueueScreen;

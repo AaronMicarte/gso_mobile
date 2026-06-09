@@ -130,6 +130,16 @@ function LoginScreen(): React.JSX.Element {
                 return;
             }
 
+            // Restrict mobile login to Admin and Staff roles only
+            const role = (response.user.Role || '').toString().toLowerCase();
+            const allowedByRole = role === 'admin' || role === 'staff';
+            const allowedById = typeof response.user.UserRoleID === 'number' && (response.user.UserRoleID === 1 || response.user.UserRoleID === 2);
+
+            if (!allowedByRole && !allowedById) {
+                Alert.alert('Access denied', "This mobile app is restricted to Administrator and Staff users only.");
+                return;
+            }
+
             await signIn(response.user, response.token);
         } catch (error) {
             const message = error instanceof Error ? error.message : 'Login failed';

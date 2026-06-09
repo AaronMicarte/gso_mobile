@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
+    Alert,
     ActivityIndicator,
     FlatList,
     RefreshControl,
@@ -11,6 +12,7 @@ import {
 import { useFocusEffect } from '@react-navigation/native';
 import { RpcCycle } from '../../../types';
 import ApiService from '../../shared/services/apiService';
+import { useAuth } from '../../auth/providers/AuthProvider';
 
 interface CycleSelectScreenProps {
     onSelectCycle: (cycleId: number) => void;
@@ -39,6 +41,7 @@ export function CycleSelectScreen({ onSelectCycle }: CycleSelectScreenProps): Re
     const [cycles, setCycles] = useState<RpcCycle[]>([]);
     const [loading, setLoading] = useState(false);
     const [refreshing, setRefreshing] = useState(false);
+    const { signOut, user } = useAuth();
 
     const loadCycles = useCallback(async (): Promise<void> => {
         setLoading(true);
@@ -135,12 +138,32 @@ export function CycleSelectScreen({ onSelectCycle }: CycleSelectScreenProps): Re
             <View style={styles.emptyContainer}>
                 <Text style={styles.emptyTitle}>No Cycles Found</Text>
                 <Text style={styles.emptySubtitle}>Create one to get started</Text>
+
                 <TouchableOpacity
                     style={styles.createButton}
                     onPress={() => void handleCreateCycle()}
                 >
                     <Text style={styles.createButtonText}>Create Current Year Cycle</Text>
                 </TouchableOpacity>
+
+                <TouchableOpacity
+                    style={styles.logoutButton}
+                    onPress={() => {
+                        Alert.alert('Log out', 'Clear the saved session and return to the login screen?', [
+                            { text: 'Cancel', style: 'cancel' },
+                            {
+                                text: 'Log out',
+                                style: 'destructive',
+                                onPress: () => {
+                                    void signOut();
+                                },
+                            },
+                        ]);
+                    }}
+                >
+                    <Text style={styles.logoutButtonText}>Logout</Text>
+                </TouchableOpacity>
+
             </View>
         );
     }
@@ -218,4 +241,7 @@ const styles = StyleSheet.create({
     statBox: { flex: 1, alignItems: 'center' },
     statValue: { fontSize: 22, fontWeight: '900', color: '#93c5fd' },
     statLabel: { marginTop: 4, fontSize: 11, color: '#9bb0d2' },
+    logoutButton: { marginLeft: 'auto', borderRadius: 999, backgroundColor: '#991b1b', paddingHorizontal: 12, paddingVertical: 8 },
+    logoutButtonText: { color: '#fecaca', fontSize: 12, fontWeight: '800' },
+    bottomDock: { backgroundColor: '#111a2d', borderTopWidth: 1, borderTopColor: '#1f2b44' },
 });

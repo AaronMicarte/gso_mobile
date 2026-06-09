@@ -168,6 +168,7 @@ function buildGroupedScans(
 
 export function ScannedAssetsScreen({ cycleId }: ScannedAssetsScreenProps): React.JSX.Element {
     const [scans, setScans] = useState<RpcInventoryScanRecord[]>([]);
+    const [cycleStatus, setCycleStatus] = useState<string | null>(null);
     const [conditions, setConditions] = useState<Condition[]>([]);
     const [loading, setLoading] = useState(false);
     const [refreshing, setRefreshing] = useState(false);
@@ -183,6 +184,16 @@ export function ScannedAssetsScreen({ cycleId }: ScannedAssetsScreenProps): Reac
     useEffect(() => {
         void loadScans();
         void loadConditions();
+        void (async () => {
+            try {
+                const response = await ApiService.listRpcInventoryCycles();
+                const found = response.data.find((c: any) => c.id === cycleId) ?? null;
+                setCycleStatus(found?.status ?? null);
+            } catch (err) {
+                // ignore — if we fail to load cycle info we leave status null
+                console.error('Failed to load cycle status:', err);
+            }
+        })();
     }, [cycleId]);
 
     async function loadConditions(): Promise<void> {
@@ -425,7 +436,13 @@ export function ScannedAssetsScreen({ cycleId }: ScannedAssetsScreenProps): Reac
                 </View>
             </View>
 
-            {groupedScans.length === 0 ? (
+            {cycleStatus === 'closed' ? (
+                <View style={styles.closedContainer}>
+                    <Text style={styles.closedText}>
+                        This year's RPCPPE has been closed. If you are an Administrator, you may reopen it through the web application.
+                    </Text>
+                </View>
+            ) : groupedScans.length === 0 ? (
                 <View style={styles.emptyContainer}>
                     <Text style={styles.emptyText}>No scanned assets yet for this cycle.</Text>
                 </View>
@@ -603,6 +620,8 @@ const styles = StyleSheet.create({
     actionButtonText: { color: '#ffffff', fontSize: 12, fontWeight: '800' },
     emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 16 },
     emptyText: { fontSize: 14, color: '#9bb0d2', textAlign: 'center' },
+    closedContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 20 },
+    closedText: { color: '#f8fafc', textAlign: 'center', fontSize: 16, lineHeight: 22 },
     centerLoading: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#0b1220' },
     loadingText: { marginTop: 12, fontSize: 14, color: '#9bb0d2' },
     modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.5)' },
