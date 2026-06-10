@@ -17,10 +17,8 @@ import ScannerScreen from './ScannerScreen';
 import { ScannedAssetsScreen } from './ScannedAssetsScreen';
 import { RpcInventoryReportScreen } from './RpcInventoryReportScreen';
 import { RpcInventoryAuditScreen } from './RpcInventoryAuditScreen';
-import { PropertyQrScreen } from './PropertyQrScreen';
-import { QrGenerateScreen } from './QrGenerateScreen';
 
-type TabType = 'cycles' | 'scanner' | 'assets' | 'report' | 'audit' | 'property-qr' | 'generate-qr';
+type TabType = 'cycles' | 'scanner' | 'assets' | 'report' | 'audit';
 const REFRESH_INTERVAL_MS = 10000;
 
 interface RpcInventoryWorkspaceProps {
@@ -189,12 +187,6 @@ export function RpcInventoryWorkspace({
                         {activeTab === 'audit' && isAdmin && (
                             <RpcInventoryAuditScreen cycleId={selectedCycleId} />
                         )}
-                        {activeTab === 'property-qr' && (
-                            <PropertyQrScreen />
-                        )}
-                        {activeTab === 'generate-qr' && (
-                            <QrGenerateScreen />
-                        )}
                     </>
                 )}
             </View>
@@ -207,8 +199,6 @@ export function RpcInventoryWorkspace({
                         { key: 'assets', label: 'Scanned Assets' },
                         ...(isAdmin ? [{ key: 'audit', label: 'Audit' }] : []),
                         { key: 'report', label: 'Report' },
-                        { key: 'property-qr', label: 'Property QR' },
-                        { key: 'generate-qr', label: 'Generate QR' },
                     ].map((tab) => (
                         <TouchableOpacity
                             key={tab.key}
