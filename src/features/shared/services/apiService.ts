@@ -112,7 +112,13 @@ class ApiService {
     opts?: { property_number?: string; property_id?: number; inventory_detail_id?: number }
   ): Promise<PreviewScanResponse> {
     const payload: Record<string, unknown> = { qr_value: qrValue };
-    if (opts?.property_number) payload.property_number = opts.property_number;
+    // If caller explicitly passed property_number, use it. Otherwise infer when the
+    // scanned value looks like a property number (contains a dash or starts with '0').
+    if (opts?.property_number) {
+      payload.property_number = opts.property_number;
+    } else if (/-/.test(qrValue) || qrValue.trim().startsWith('0')) {
+      payload.property_number = qrValue;
+    }
     if (typeof opts?.property_id === 'number') payload.property_id = opts.property_id;
     if (typeof opts?.inventory_detail_id === 'number') payload.inventory_detail_id = opts.inventory_detail_id;
 

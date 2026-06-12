@@ -206,42 +206,14 @@ export default function ScannerScreen({ cycleId, cycleTotals }: ScannerScreenPro
                     </View>
 
                     <View style={styles.section}>
-                      <Text style={styles.sectionLabel}>Select property numbers</Text>
-                      <View style={styles.candidateWrap}>
-                        {(preview.candidates ?? []).map((candidate: ScanCandidate) => {
-                          const selected = selectedInventoryDetailIds.includes(candidate.inventory_detail_id);
-                          const disabled = candidate.is_scanned;
-                          return (
-                            <TouchableOpacity
-                              key={candidate.inventory_detail_id}
-                              style={[
-                                styles.candidateChip,
-                                selected && styles.candidateChipSelected,
-                                disabled && styles.candidateChipDisabled,
-                              ]}
-                              onPress={() => {
-                                if (disabled) return;
-                                setSelectedInventoryDetailIds(
-                                  selected
-                                    ? selectedInventoryDetailIds.filter((id: number) => id !== candidate.inventory_detail_id)
-                                    : [...selectedInventoryDetailIds, candidate.inventory_detail_id]
-                                );
-                              }}
-                              disabled={disabled}
-                            >
-                              <Text
-                                style={[
-                                  styles.candidateText,
-                                  selected && styles.candidateTextSelected,
-                                  disabled && styles.candidateTextDisabled,
-                                ]}
-                              >
-                                {candidate.property_number ?? `#${candidate.inventory_detail_id}`}
-                                {candidate.is_scanned ? ' (scanned)' : ''}
-                              </Text>
-                            </TouchableOpacity>
-                          );
-                        })}
+                      <Text style={styles.sectionLabel}>Property Number</Text>
+                      <View style={{ marginTop: 8 }}>
+                        <Text style={{ color: '#fff', fontWeight: '800', fontSize: 16 }}>
+                          {(preview.candidates ?? [])[0]?.property_number ?? `#${(preview.candidates ?? [])[0]?.inventory_detail_id ?? preview.asset?.inventory_detail_id ?? ''}`}
+                        </Text>
+                        <Text style={{ marginTop: 6, color: (preview.candidates ?? [])[0]?.is_scanned ? '#fb7185' : '#34d399' }}>
+                          {(preview.candidates ?? [])[0]?.is_scanned ? 'already scanned' : 'available'}
+                        </Text>
                       </View>
                     </View>
                   </View>

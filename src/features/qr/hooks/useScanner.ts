@@ -190,59 +190,51 @@ export function useScanner(cycleId: number): UseScannerResult {
     }
 
     async function confirmScan(): Promise<void> {
-        if (!preview || !selectedCondition || selectedInventoryDetailIds.length === 0) {
-            throw new Error('Please select a condition and at least one property to scan');
+        if (!preview || !selectedCondition) {
+            throw new Error('Please select a condition and preview a property to scan');
+        }
+
+        const detailId = preview.asset?.inventory_detail_id ?? selectedInventoryDetailIds[0];
+        if (!detailId || detailId <= 0) {
+            throw new Error('No valid property selected for scanning');
         }
 
         setLoading(true);
         try {
             const deviceId = await AuthService.getOrCreateDeviceId();
             const user = await AuthService.getUser();
-            const uniqueSelectedInventoryDetailIds = Array.from(
-                new Set(selectedInventoryDetailIds)
-            ).filter((id) => id > 0);
 
-            // For offline queue, create one LocalScan row per selected inventory_detail_id
+            // Single-scan: only queue one LocalScan row for the matched inventory detail
             const cycleToUse = toPreviewCycleId(preview, cycleId);
             const now = new Date().toISOString();
 
-            // Build a map of inventory_detail_id to candidate for quick lookup of correct property_number
-            const candidateMap = new Map(
-                (preview.candidates ?? []).map((candidate) => [candidate.inventory_detail_id, candidate])
-            );
+            const candidate = (preview.candidates ?? []).find((c) => c.inventory_detail_id === detailId) ?? null;
+            const propertyNumber = candidate?.property_number ?? preview.asset?.property_number ?? null;
+            const propertyId = candidate?.property_id ?? preview.asset?.property_id ?? null;
 
-            for (const detailId of uniqueSelectedInventoryDetailIds) {
-                // Look up the specific candidate for this detail ID to get the correct property number
-                const candidate = candidateMap.get(detailId);
-                const propertyNumber = candidate?.property_number ?? preview.asset?.property_number ?? null;
-                const propertyId = candidate?.property_id ?? preview.asset?.property_id ?? null;
-
-                await ScanQueueService.addScan({
-                    cycle_id: cycleToUse,
-                    inventory_detail_id: detailId,
-                    property_id: propertyId,
-                    condition_id: selectedCondition,
-                    scanned_at: now,
-                    remarks: remarks.trim() || null,
-                    device_id: deviceId,
-                    user_id: user?.UserID ?? 0,
-                    // Asset details
-                    article: preview.asset?.article ?? null,
-                    description: preview.asset?.description ?? null,
-                    property_number: propertyNumber,
-                    unit_of_measure: preview.asset?.unit_of_measure ?? null,
-                    unit_value: preview.asset?.unit_value ?? null,
-                    accountable_officer: preview.asset?.accountable_officer ?? null,
-                    rpc_type: preview.asset?.rpc_type ?? null,
-                    // include additional asset identifiers if server provided them
-                    Brand: (preview.asset as any)?.Brand ?? (preview.asset as any)?.BrandName ?? null,
-                    ModelNumber: (preview.asset as any)?.ModelNumber ?? null,
-                    SerialNumber: (preview.asset as any)?.SerialNumber ?? null,
-                });
-            }
+            await ScanQueueService.addScan({
+                cycle_id: cycleToUse,
+                inventory_detail_id: detailId,
+                property_id: propertyId,
+                condition_id: selectedCondition,
+                scanned_at: now,
+                remarks: remarks.trim() || null,
+                device_id: deviceId,
+                user_id: user?.UserID ?? 0,
+                // Asset details
+                article: preview.asset?.article ?? null,
+                description: preview.asset?.description ?? null,
+                property_number: propertyNumber,
+                unit_of_measure: preview.asset?.unit_of_measure ?? null,
+                unit_value: preview.asset?.unit_value ?? null,
+                accountable_officer: preview.asset?.accountable_officer ?? null,
+                rpc_type: preview.asset?.rpc_type ?? null,
+                Brand: (preview.asset as any)?.Brand ?? (preview.asset as any)?.BrandName ?? null,
+                ModelNumber: (preview.asset as any)?.ModelNumber ?? null,
+                SerialNumber: (preview.asset as any)?.SerialNumber ?? null,
+            });
 
             await updateQueueStats();
-            // clear selection and reset
             setSelectedInventoryDetailIds([]);
             resetScan();
         } finally {
