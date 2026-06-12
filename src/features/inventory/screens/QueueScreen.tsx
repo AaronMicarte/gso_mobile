@@ -27,6 +27,7 @@ type QueueGroup = {
   status: LocalScan['status'];
   latestScanAt: string;
   conditionPreview: string;
+  groupRemark: string;
 };
 
 const CONDITION_FALLBACKS: Record<number, string> = {
@@ -175,6 +176,10 @@ function buildQueueGroups(
           conditionLabels.length === 1
             ? conditionLabels[0]
             : `${conditionLabels.length} condition labels`,
+        groupRemark: (() => {
+          const found = sortedScans.find((s) => (s.remarks ?? '').trim().length > 0);
+          return found ? (found.remarks as string) : 'Not Found';
+        })(),
       };
     })
     .sort(
@@ -549,6 +554,10 @@ function QueueScreen(): React.JSX.Element {
                   <Text style={styles.detailValue}>{activeGroup.conditionPreview}</Text>
                 </View>
 
+                <View style={styles.detailBlock}>
+                  <Text style={styles.detailLabel}>Remarks</Text>
+                  <Text style={styles.detailValue}>{activeGroup.groupRemark}</Text>
+                </View>
                 <View style={styles.detailList}>
                   {activeGroup.scans.map((scan) => (
                     <View key={scan.client_uuid} style={styles.detailCard}>
@@ -574,9 +583,7 @@ function QueueScreen(): React.JSX.Element {
                           Value: ₱{Number(scan.unit_value).toFixed(2)}
                         </Text>
                       ) : null}
-                      {scan.remarks ? (
-                        <Text style={styles.detailCardLine}>Remarks: {scan.remarks}</Text>
-                      ) : null}
+                      {/* Per-scan remarks suppressed in favor of the group's latest remark shown above. */}
                       {scan.error_message ? (
                         <Text style={styles.detailCardError}>{scan.error_message}</Text>
                       ) : null}
