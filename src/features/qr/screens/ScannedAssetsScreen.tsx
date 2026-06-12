@@ -498,16 +498,6 @@ export function ScannedAssetsScreen({ cycleId }: ScannedAssetsScreenProps): Reac
                             })}
                         </View>
 
-                        <Text style={styles.sectionLabel}>Remarks</Text>
-                        <TextInput
-                            style={styles.remarksInput}
-                            placeholder="Add remarks"
-                            placeholderTextColor="#94a3b8"
-                            value={editRemarks}
-                            onChangeText={setEditRemarks}
-                            multiline
-                        />
-
                         <Text style={styles.sectionLabel}>Sibling scans</Text>
                         <Text style={styles.sectionHint}>Keep the scans you want to update, or untick the ones you want to remove from the group.</Text>
                         <View style={styles.siblingList}>

@@ -554,10 +554,6 @@ function QueueScreen(): React.JSX.Element {
                   <Text style={styles.detailValue}>{activeGroup.conditionPreview}</Text>
                 </View>
 
-                <View style={styles.detailBlock}>
-                  <Text style={styles.detailLabel}>Remarks</Text>
-                  <Text style={styles.detailValue}>{activeGroup.groupRemark}</Text>
-                </View>
                 <View style={styles.detailList}>
                   {activeGroup.scans.map((scan) => (
                     <View key={scan.client_uuid} style={styles.detailCard}>
