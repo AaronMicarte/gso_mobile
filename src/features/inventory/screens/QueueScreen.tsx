@@ -191,6 +191,7 @@ function QueueScreen(): React.JSX.Element {
   const { cycleId } = useAuth();
   const [scans, setScans] = useState<LocalScan[]>([]);
   const [cycleStatus, setCycleStatus] = useState<string | null>(null);
+  const [cycleLabel, setCycleLabel] = useState<string | null>(null);
   const [conditionLookup, setConditionLookup] = useState<Record<number, string>>({});
   const [refreshing, setRefreshing] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -239,8 +240,10 @@ function QueueScreen(): React.JSX.Element {
       void (async () => {
         try {
           const resp = await ApiService.listRpcInventoryCycles();
-          const found = resp.data.find((c: any) => c.id === cycleId) ?? null;
+          const found = Array.isArray(resp.data) ? resp.data.find((c: any) => c.id === cycleId) ?? null : null;
           setCycleStatus(found?.status ?? null);
+          // Prefer the cycle label from server; for older responses use current_cycle.label
+          setCycleLabel(found?.cycle_label ?? resp.current_cycle?.label ?? null);
         } catch (err) {
           console.error('[QueueScreen] Failed to load cycle status:', err);
         }
@@ -438,7 +441,7 @@ function QueueScreen(): React.JSX.Element {
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Scan Queue</Text>
-        <Text style={styles.headerSubtitle}>Offline queue for cycle {cycleId}</Text>
+        <Text style={styles.headerSubtitle}>Offline queue for {cycleLabel ?? `cycle ${cycleId}`}</Text>
 
         <View style={styles.statsContainer}>
           <View style={styles.statBox}>

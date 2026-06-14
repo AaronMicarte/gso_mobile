@@ -19,7 +19,7 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: React.ReactNode }): React.JSX.Element {
     const [initializing, setInitializing] = useState(true);
     const [user, setUser] = useState<User | null>(null);
-    const [cycleId, setCycleId] = useState(1);
+    const [cycleId, setCycleId] = useState(0);
 
     async function bootstrapSession(): Promise<void> {
         try {
@@ -36,7 +36,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
             if (storedUser && storedToken && isAllowed(storedUser)) {
                 ApiService.setToken(storedToken);
                 setUser(storedUser);
-                setCycleId(storedUser.UserID || 1);
+                // Determine active RPC inventory cycle from backend so Admin and Staff
+                // share the same active cycle instead of using the local user id.
+                try {
+                    const resp = await ApiService.listRpcInventoryCycles();
+                    const year = resp.current_cycle?.start_year ?? null;
+                    const found = Array.isArray(resp.data)
+                        ? resp.data.find((c: any) => Number(c.start_year) === Number(year))
+                        : null;
+                    setCycleId(found?.id ?? 0);
+                } catch (e) {
+                    // Fallback to 0 when cycle cannot be resolved
+                    setCycleId(0);
+                    console.error('[AuthProvider] Failed to resolve active cycle:', e);
+                }
+
                 void SyncService.start();
             } else {
                 await AuthService.clearAuth();
@@ -68,7 +82,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
         await AuthService.saveUser(nextUser);
         ApiService.setToken(token);
         setUser(nextUser);
-        setCycleId(nextUser.UserID || 1);
+        // Resolve active cycle from backend after successful sign-in
+        try {
+            const resp = await ApiService.listRpcInventoryCycles();
+            const year = resp.current_cycle?.start_year ?? null;
+            const found = Array.isArray(resp.data) ? resp.data.find((c: any) => Number(c.start_year) === Number(year)) : null;
+            setCycleId(found?.id ?? 0);
+        } catch (e) {
+            setCycleId(0);
+            console.error('[AuthProvider] Failed to resolve active cycle after sign-in:', e);
+        }
+
         void SyncService.start();
     }
 
