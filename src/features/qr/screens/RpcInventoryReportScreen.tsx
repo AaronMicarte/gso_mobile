@@ -122,6 +122,7 @@ export function RpcInventoryReportScreen({ cycleId }: RpcInventoryReportScreenPr
                                     <MiniStat label="Count" value={String(row.quantity_per_count)} />
                                     <MiniStat label="Shortage / Over" value={String(row.shortage_overage_qty)} />
                                 </View>
+                                {row.remarks && <Text style={styles.remarksText}>Remarks: {row.remarks}</Text>}
                                 <Text style={styles.rowFooter}>Dept: {row.department} · Condition: {row.condition ?? '—'}</Text>
                             </View>
                         ))}
@@ -176,6 +177,7 @@ const styles = StyleSheet.create({
     rowCard: { borderRadius: 16, backgroundColor: '#0b1220', borderWidth: 1, borderColor: '#263552', padding: 12, gap: 4 },
     rowTitle: { fontSize: 15, fontWeight: '900', color: '#f8fafc' },
     rowMeta: { fontSize: 12, color: '#c5d5ef' },
+    remarksText: { fontSize: 12, color: '#fbbf24', fontWeight: '600', marginTop: 4 },
     rowGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingTop: 8 },
     miniStat: { width: '48%', borderRadius: 12, backgroundColor: '#111a2d', borderWidth: 1, borderColor: '#334463', padding: 10 },
     miniStatLabel: { fontSize: 10, fontWeight: '800', color: '#8aa0c5', textTransform: 'uppercase' },

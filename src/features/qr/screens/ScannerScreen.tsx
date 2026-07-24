@@ -241,6 +241,21 @@ export default function ScannerScreen({ cycleId, cycleTotals }: ScannerScreenPro
                   </View>
                 </View>
 
+                <View style={styles.section}>
+                  <Text style={styles.sectionLabel}>Remarks</Text>
+                  <TextInput
+                    value={remarks}
+                    onChangeText={setRemarks}
+                    multiline
+                    placeholder="Optional custom remark. Leave blank to use default missing-count text."
+                    placeholderTextColor="#94a3b8"
+                    style={styles.remarksInput}
+                  />
+                  <Text style={{ marginTop: 8, fontSize: 12, color: '#94a3b8' }}>
+                    Leave blank to use the default missing-count text when applicable.
+                  </Text>
+                </View>
+
                 <View style={styles.actionRow}>
                   <TouchableOpacity style={[styles.actionButton, styles.cancelButton]} onPress={resetScan} disabled={loading}>
                     <Text style={styles.actionButtonText}>Cancel</Text>

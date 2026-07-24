@@ -498,6 +498,17 @@ export function ScannedAssetsScreen({ cycleId }: ScannedAssetsScreenProps): Reac
                             })}
                         </View>
 
+                        <Text style={styles.sectionLabel}>Remarks</Text>
+                        <TextInput
+                            value={editRemarks}
+                            onChangeText={setEditRemarks}
+                            multiline
+                            placeholder="Optional custom remark. Clear to revert to default missing-count text."
+                            placeholderTextColor="#94a3b8"
+                            style={styles.remarksInput}
+                        />
+                        <Text style={styles.sectionHint}>Leave blank to revert to the default “[number] not found” text when applicable.</Text>
+
                         <Text style={styles.sectionLabel}>Sibling scans</Text>
                         <Text style={styles.sectionHint}>Keep the scans you want to update, or untick the ones you want to remove from the group.</Text>
                         <View style={styles.siblingList}>
