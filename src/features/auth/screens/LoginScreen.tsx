@@ -126,7 +126,8 @@ function LoginScreen(): React.JSX.Element {
             const response = await ApiService.login(username, password);
 
             if (!response.token || !response.user) {
-                Alert.alert('Error', response.message || 'Login failed');
+                setPassword('');
+                Alert.alert('Invalid credentials', response.message || 'Invalid credentials');
                 return;
             }
 
@@ -136,14 +137,16 @@ function LoginScreen(): React.JSX.Element {
             const allowedById = typeof response.user.UserRoleID === 'number' && (response.user.UserRoleID === 1 || response.user.UserRoleID === 2);
 
             if (!allowedByRole && !allowedById) {
+                setPassword('');
                 Alert.alert('Access denied', "This mobile app is restricted to Administrator and Staff users only.");
                 return;
             }
 
             await signIn(response.user, response.token);
         } catch (error) {
-            const message = error instanceof Error ? error.message : 'Login failed';
-            Alert.alert('Login Error', message);
+            setPassword('');
+            const message = error instanceof Error ? error.message : 'Invalid credentials';
+            Alert.alert('Invalid credentials', message);
         } finally {
             setLoading(false);
         }
