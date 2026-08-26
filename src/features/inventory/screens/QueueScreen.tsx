@@ -32,8 +32,8 @@ type QueueGroup = {
 
 const CONDITION_FALLBACKS: Record<number, string> = {
   1: 'Serviceable',
-  2: 'Unserviceable',
-  6: 'Under Repair',
+  2: 'Unserviceable'
+  // 6: 'Under Repair',
 };
 
 function getScanTimestamp(scan: LocalScan): number {

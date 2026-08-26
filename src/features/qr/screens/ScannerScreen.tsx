@@ -223,20 +223,22 @@ export default function ScannerScreen({ cycleId, cycleTotals }: ScannerScreenPro
                   <Text style={styles.sectionLabel}>Condition</Text>
                   <View style={styles.conditionListWrap}>
                     <ScrollView nestedScrollEnabled>
-                      {(Array.isArray(conditions) ? conditions : []).map((cond) => {
-                        const selected = selectedCondition === cond.ConditionID;
-                        return (
-                          <TouchableOpacity
-                            key={cond.ConditionID}
-                            style={[styles.conditionRow, selected && styles.conditionRowSelected]}
-                            onPress={() => setSelectedCondition(cond.ConditionID)}
-                          >
-                            <Text style={[styles.conditionText, selected && styles.conditionTextSelected]}>
-                              {cond.ConditionName}
-                            </Text>
-                          </TouchableOpacity>
-                        );
-                      })}
+                      {(Array.isArray(conditions) ? conditions : [])
+                        .filter((cond) => cond.ConditionName !== 'Under Repair')
+                        .map((cond) => {
+                          const selected = selectedCondition === cond.ConditionID;
+                          return (
+                            <TouchableOpacity
+                              key={cond.ConditionID}
+                              style={[styles.conditionRow, selected && styles.conditionRowSelected]}
+                              onPress={() => setSelectedCondition(cond.ConditionID)}
+                            >
+                              <Text style={[styles.conditionText, selected && styles.conditionTextSelected]}>
+                                {cond.ConditionName}
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
                     </ScrollView>
                   </View>
                 </View>
