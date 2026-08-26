@@ -7,6 +7,10 @@ import AuthService from '../../auth/services/authService';
 const DEFAULT_SYNC_INTERVAL_MS = 30000;
 const DEFAULT_MAX_RETRY_ATTEMPTS = 5;
 const RETRY_DELAY_MS = 2000;
+// FIX #3: Cap max retry delay so the sync never blocks for 32+ seconds.
+// Without this cap: 2s, 4s, 8s, 16s, 32s = 62s total wait on bad network.
+// With this cap:    2s, 4s, 8s, 10s, 10s = 34s max, much more reasonable.
+const MAX_RETRY_DELAY_MS = 10000;
 
 interface BulkStoreScanResult {
   status?: 'created' | 'duplicate' | 'error' | string;
@@ -144,12 +148,13 @@ class SyncService {
       if (response && Array.isArray(response.results)) {
         for (const r of response.results) {
           if (r.status === 'created') {
-            // Store remote scan id when provided
+            // FIX #2: Always persist remote scan_id so deleteScan never needs
+            // to paginate all remote scans to find a match.
             await ScanQueueService.markSynced(r.client_uuid, (r as any).scan_id ?? null);
             synced += 1;
           } else if (r.status === 'duplicate') {
-            // If server returned scan id for duplicate, persist it; otherwise remove local record
             if ((r as any).scan_id) {
+              // FIX #2: Backend now always returns scan_id for duplicates too.
               await ScanQueueService.markSynced(r.client_uuid, (r as any).scan_id);
             } else {
               await ScanQueueService.deleteScan(r.client_uuid);
@@ -196,7 +201,8 @@ class SyncService {
       const retryable = !axios.isAxiosError(err) || !err.response || err.response.status >= 500;
       const maxRetryAttempts = resolveMaxRetryAttempts();
       if (retryable && attempt < maxRetryAttempts) {
-        const delay = RETRY_DELAY_MS * Math.pow(2, attempt);
+        // FIX #3: Cap the delay. Without Math.min this grows to 32s on attempt 4.
+        const delay = Math.min(RETRY_DELAY_MS * Math.pow(2, attempt), MAX_RETRY_DELAY_MS);
         await new Promise((r) => setTimeout(r, delay));
         return this.retryRequest(fn, attempt + 1);
       }

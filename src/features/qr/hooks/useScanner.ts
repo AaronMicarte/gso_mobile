@@ -48,11 +48,12 @@ export function useScanner(cycleId: number): UseScannerResult {
     const [loading, setLoading] = useState(false);
     const [queueStats, setQueueStats] = useState({ synced: 0, failed: 0, total: 0 });
 
+    // FIX #1: Removed reconcileSyncedScans from here.
+    // It was fetching ALL remote scans (paginated) on every single scan confirm.
+    // Now it only reads from the local SQLite queue — fast.
+    // reconcileSyncedScans is only called in refreshScanner (manual refresh button).
     const updateQueueStats = useCallback(async () => {
         try {
-            if (cycleId) {
-                await ScanQueueService.reconcileSyncedScans(cycleId);
-            }
             const stats = await ScanQueueService.getQueueStats(cycleId);
             setQueueStats(stats);
         } catch (error) {
@@ -94,9 +95,12 @@ export function useScanner(cycleId: number): UseScannerResult {
         }, [updateQueueStats])
     );
 
+    // FIX #1 continued: reconcileSyncedScans is now only called here (manual refresh).
+    // This keeps the heavy network call out of the hot scan path.
     const refreshScanner = useCallback(async (): Promise<void> => {
+        await ScanQueueService.reconcileSyncedScans(cycleId);
         await Promise.all([loadConditions(), updateQueueStats()]);
-    }, [loadConditions, updateQueueStats]);
+    }, [cycleId, loadConditions, updateQueueStats]);
 
     async function onBarcodeScanned(result: BarcodeScanningResult): Promise<void> {
         if (scanned || !cycleId) return;
@@ -123,7 +127,6 @@ export function useScanner(cycleId: number): UseScannerResult {
             setSelectedInventoryDetailIds(defaultSelection);
             setSelectedCondition((current) => current ?? conditions[0]?.ConditionID ?? null);
         } catch (error) {
-            // Surface backend response when available so user sees why preview failed
             console.error('Failed to preview scan:', error);
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const err: any = error;
@@ -204,7 +207,6 @@ export function useScanner(cycleId: number): UseScannerResult {
             const deviceId = await AuthService.getOrCreateDeviceId();
             const user = await AuthService.getUser();
 
-            // Single-scan: only queue one LocalScan row for the matched inventory detail
             const cycleToUse = toPreviewCycleId(preview, cycleId);
             const now = new Date().toISOString();
 
@@ -221,7 +223,6 @@ export function useScanner(cycleId: number): UseScannerResult {
                 remarks: remarks.trim() || null,
                 device_id: deviceId,
                 user_id: user?.UserID ?? 0,
-                // Asset details
                 article: preview.asset?.article ?? null,
                 description: preview.asset?.description ?? null,
                 property_number: propertyNumber,
@@ -234,6 +235,7 @@ export function useScanner(cycleId: number): UseScannerResult {
                 SerialNumber: (preview.asset as any)?.SerialNumber ?? null,
             });
 
+            // FIX #1 continued: updateQueueStats now only reads local SQLite — no network call.
             await updateQueueStats();
             setSelectedInventoryDetailIds([]);
             resetScan();
