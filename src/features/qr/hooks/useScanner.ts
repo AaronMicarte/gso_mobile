@@ -125,7 +125,8 @@ export function useScanner(cycleId: number): UseScannerResult {
                 ...response,
             });
             setSelectedInventoryDetailIds(defaultSelection);
-            setSelectedCondition((current) => current ?? conditions[0]?.ConditionID ?? null);
+            const initialCond = response.asset?.condition_id ?? conditions[0]?.ConditionID ?? null;
+            setSelectedCondition(initialCond);
         } catch (error) {
             console.error('Failed to preview scan:', error);
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -170,7 +171,8 @@ export function useScanner(cycleId: number): UseScannerResult {
                 ...response,
             });
             setSelectedInventoryDetailIds(defaultSelection);
-            setSelectedCondition((current) => current ?? conditions[0]?.ConditionID ?? null);
+            const initialCond = response.asset?.condition_id ?? conditions[0]?.ConditionID ?? null;
+            setSelectedCondition(initialCond);
         } catch (error) {
             console.error('Failed to preview scan (manual):', error);
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -252,6 +254,34 @@ export function useScanner(cycleId: number): UseScannerResult {
         setSelectedInventoryDetailIds([]);
     }
 
+    const handleSelectCondition = useCallback((conditionId: number | null) => {
+        setSelectedCondition(conditionId);
+        if (!conditionId || !preview || !cycleId) return;
+
+        const detailId = preview.asset?.inventory_detail_id;
+        const propId = preview.asset?.property_id ?? undefined;
+        if (!detailId && !propId) return;
+
+        void ApiService.updateAssetCondition(cycleId, {
+            inventory_detail_id: detailId,
+            property_id: propId,
+            condition_id: conditionId,
+        }).then(() => {
+            setPreview((prev) => {
+                if (!prev) return null;
+                return {
+                    ...prev,
+                    asset: {
+                        ...prev.asset,
+                        condition_id: conditionId,
+                    },
+                };
+            });
+        }).catch((err: unknown) => {
+            console.error('Failed to sync condition to inventory during preview:', err);
+        });
+    }, [cycleId, preview]);
+
     return {
         hasPermission,
         scanned,
@@ -265,7 +295,7 @@ export function useScanner(cycleId: number): UseScannerResult {
         setSelectedInventoryDetailIds,
         requestCameraPermission,
         onBarcodeScanned,
-        setSelectedCondition,
+        setSelectedCondition: handleSelectCondition,
         setRemarks,
         resetScan,
         confirmScan,

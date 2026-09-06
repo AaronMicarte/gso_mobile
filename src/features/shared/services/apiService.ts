@@ -129,6 +129,17 @@ class ApiService {
     return response.data;
   }
 
+  async updateAssetCondition(
+    cycleId: number,
+    payload: { inventory_detail_id?: number; property_id?: number; condition_id: number }
+  ): Promise<{ success: boolean; message: string; condition_id: number; condition_name?: string }> {
+    const response = await this.api.post(
+      `/rpc-inventory/cycles/${cycleId}/update-condition`,
+      payload
+    );
+    return response.data;
+  }
+
   async getInventory(id: number): Promise<InventoryResponse> {
     const response = await this.api.get<InventoryResponse>(`/admin/inventory/${id}`);
     return response.data;

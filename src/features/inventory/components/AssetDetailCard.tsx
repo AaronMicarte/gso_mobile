@@ -26,7 +26,7 @@ export function AssetDetailCard({
       </View>
       <Text style={styles.title}>{title}</Text>
       {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
-      {code ? <Text style={styles.code}>Code: {code}</Text> : null}
+      {code ? <Text style={styles.code}>Property No: {code}</Text> : null}
       {description ? <Text style={styles.description}>{description}</Text> : null}
     </View>
   );

@@ -187,7 +187,7 @@ export default function ScannerScreen({ cycleId, cycleTotals }: ScannerScreenPro
                       title={preview.asset?.article ?? 'Unknown Asset'}
                       subtitle={preview.asset?.description}
                       code={preview.asset?.property_number}
-                      description={preview.qr_value}
+                    // description={preview.qr_value}
                     />
 
                     <View style={styles.summaryRow}>
@@ -207,12 +207,12 @@ export default function ScannerScreen({ cycleId, cycleTotals }: ScannerScreenPro
 
                     <View style={styles.section}>
                       <Text style={styles.sectionLabel}>Property Number</Text>
-                      <View style={{ marginTop: 8 }}>
+                      <View style={{ marginTop: 8, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' }}>
                         <Text style={{ color: '#fff', fontWeight: '800', fontSize: 16 }}>
-                          {(preview.candidates ?? [])[0]?.property_number ?? `#${(preview.candidates ?? [])[0]?.inventory_detail_id ?? preview.asset?.inventory_detail_id ?? ''}`}
+                          Property #: {(preview.candidates ?? [])[0]?.property_number ?? `#${(preview.candidates ?? [])[0]?.inventory_detail_id ?? preview.asset?.inventory_detail_id ?? ''}`}
                         </Text>
-                        <Text style={{ marginTop: 6, color: (preview.candidates ?? [])[0]?.is_scanned ? '#fb7185' : '#34d399' }}>
-                          {(preview.candidates ?? [])[0]?.is_scanned ? 'already scanned' : 'available'}
+                        <Text style={{ marginLeft: 12, color: (preview.candidates ?? [])[0]?.is_scanned ? '#fb7185' : '#34d399', fontSize: 14, fontWeight: '600' }}>
+                          {(preview.candidates ?? [])[0]?.is_scanned ? '(already scanned)' : '(available)'}
                         </Text>
                       </View>
                     </View>
@@ -241,6 +241,9 @@ export default function ScannerScreen({ cycleId, cycleTotals }: ScannerScreenPro
                         })}
                     </ScrollView>
                   </View>
+                  <Text style={{ marginTop: 6, fontSize: 11, color: '#94a3b8' }}>
+                    Selecting condition here directly updates Inventory & All Items.
+                  </Text>
                 </View>
 
                 <View style={styles.section}>
@@ -253,9 +256,6 @@ export default function ScannerScreen({ cycleId, cycleTotals }: ScannerScreenPro
                     placeholderTextColor="#94a3b8"
                     style={styles.remarksInput}
                   />
-                  <Text style={{ marginTop: 8, fontSize: 12, color: '#94a3b8' }}>
-                    Leave blank to use the default missing-count text when applicable.
-                  </Text>
                 </View>
 
                 <View style={styles.actionRow}>

@@ -54,6 +54,8 @@ export interface ScanAsset {
     source_iar_detail_id: number | null;
     property_type_name: string | null;
     department_name: string | null;
+    condition_id?: number | null;
+    condition_name?: string | null;
 }
 
 export interface ScanCandidate {

@@ -560,12 +560,14 @@ function QueueScreen(): React.JSX.Element {
                 <View style={styles.detailList}>
                   {activeGroup.scans.map((scan) => (
                     <View key={scan.client_uuid} style={styles.detailCard}>
-                      <Text style={styles.detailCardTitle}>
-                        {scan.property_number?.trim() || `Detail ${scan.inventory_detail_id}`}
-                      </Text>
-                      <Text style={styles.detailCardMeta}>
-                        {formatDateTime(scan.scanned_at || scan.created_at)}
-                      </Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                        <Text style={styles.detailCardTitle}>
+                          {scan.property_number?.trim() || `Detail ${scan.inventory_detail_id}`}
+                        </Text>
+                        <Text style={styles.detailCardMeta}>
+                          {formatDateTime(scan.scanned_at || scan.created_at)}
+                        </Text>
+                      </View>
                       <Text style={styles.detailCardLine}>
                         Condition: {getConditionLabel(scan, conditionLookup)}
                       </Text>
@@ -582,7 +584,6 @@ function QueueScreen(): React.JSX.Element {
                           Value: ₱{Number(scan.unit_value).toFixed(2)}
                         </Text>
                       ) : null}
-                      {/* Per-scan remarks suppressed in favor of the group's latest remark shown above. */}
                       {scan.error_message ? (
                         <Text style={styles.detailCardError}>{scan.error_message}</Text>
                       ) : null}
