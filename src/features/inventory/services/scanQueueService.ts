@@ -419,7 +419,7 @@ class ScanQueueService {
         await this.runWithDatabase((db) => db.execAsync(query, params));
     }
 
-    async deleteScan(clientUuid: string): Promise<void> {
+    async deleteScan(clientUuid: string, localOnly: boolean = false): Promise<void> {
         // First, fetch the local scan record so we can attempt to remove it from the backend if needed
         const rows = await this.runWithDatabase((db) =>
             db.getAllAsync(`SELECT * FROM scan_queue WHERE client_uuid = ? LIMIT 1`, [clientUuid])
@@ -427,7 +427,7 @@ class ScanQueueService {
 
         const scan = (rows && rows.length > 0 ? (rows[0] as unknown as LocalScan) : null);
 
-        if (scan) {
+        if (scan && !localOnly) {
             // If the scan was already synced to the server, try to delete the corresponding remote record
             if (scan.status === 'synced' || scan.status === 'syncing' || scan.remote_scan_id) {
                 try {
@@ -450,7 +450,11 @@ class ScanQueueService {
                                     try {
                                         await ApiService.deleteRpcScan(remote.id);
                                     } catch (err) {
-                                        console.warn('[ScanQueueService] Failed to delete remote scan', remote.id, err);
+                                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                                        const status = (err as any)?.response?.status;
+                                        if (status !== 404) {
+                                            console.warn('[ScanQueueService] Failed to delete remote scan', remote.id, err);
+                                        }
                                     }
                                     page = lastPage + 1;
                                     break;
@@ -462,7 +466,12 @@ class ScanQueueService {
                         } while (page <= lastPage);
                     }
                 } catch (err) {
-                    console.warn('[ScanQueueService] Error while attempting remote delete:', err);
+                    // 404 = already gone on the server, which is what we wanted anyway.
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    const status = (err as any)?.response?.status;
+                    if (status !== 404) {
+                        console.warn('[ScanQueueService] Error while attempting remote delete:', err);
+                    }
                 }
             }
         }
@@ -503,8 +512,8 @@ class ScanQueueService {
 
             const syncedOnly = syncedScans.filter((s) => s.status === 'synced');
 
-            // Delete stale synced scans and collect them
-            const toDelete = [];
+            // Delete stale synced scans (server already doesn't have them → local-only delete)
+            const toDelete: string[] = [];
             for (const scan of syncedOnly) {
                 const isRemote = remoteDetailIds.has(scan.inventory_detail_id);
 
@@ -513,9 +522,10 @@ class ScanQueueService {
                 }
             }
 
-            // Execute all deletes in parallel, with a tiny delay to ensure DB flush
+            // Execute all deletes in parallel — localOnly:true skips the remote DELETE call
+            // entirely (we already know the server doesn't have these). Eliminates 404 warnings.
             if (toDelete.length > 0) {
-                await Promise.all(toDelete.map((uuid) => this.deleteScan(uuid)));
+                await Promise.all(toDelete.map((uuid) => this.deleteScan(uuid, true)));
                 // Small delay to ensure SQLite writes are persisted
                 await new Promise((r) => setTimeout(r, 50));
                 removed = toDelete.length;

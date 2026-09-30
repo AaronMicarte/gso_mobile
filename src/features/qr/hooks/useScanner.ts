@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert } from 'react-native';
 import { Camera, BarcodeScanningResult } from 'expo-camera';
 import { useFocusEffect } from '@react-navigation/native';
@@ -47,6 +47,13 @@ export function useScanner(cycleId: number): UseScannerResult {
     const [selectedInventoryDetailIds, setSelectedInventoryDetailIds] = useState<number[]>([]);
     const [loading, setLoading] = useState(false);
     const [queueStats, setQueueStats] = useState({ synced: 0, failed: 0, total: 0 });
+
+    // Prevents the same QR from hammering the API when the camera is still in frame
+    const lastScanRef = useRef<{ value: string; at: number } | null>(null);
+    // Global throttle: max one decode per 700ms
+    const scanThrottleRef = useRef(0);
+    // Prevents the "Already scanned" Alert from spamming on the same property
+    const lastBlockedRef = useRef<{ key: string; at: number } | null>(null);
 
     // FIX #1: Removed reconcileSyncedScans from here.
     // It was fetching ALL remote scans (paginated) on every single scan confirm.
@@ -105,19 +112,59 @@ export function useScanner(cycleId: number): UseScannerResult {
     async function onBarcodeScanned(result: BarcodeScanningResult): Promise<void> {
         if (scanned || !cycleId) return;
 
+        const now = Date.now();
+
+        // Global throttle: max one decode every 700ms
+        if (now - scanThrottleRef.current < 700) return;
+        scanThrottleRef.current = now;
+
+        // Same QR within 2s → drop BEFORE network call (no lag, no spam)
+        const last = lastScanRef.current;
+        if (last && last.value === result.data && now - last.at < 2000) {
+            return;
+        }
+        lastScanRef.current = { value: result.data, at: now };
+
         setScanned(true);
         setLoading(true);
 
         try {
             const response = await ApiService.previewScan(cycleId, result.data);
+
+            // 👇 if there is nothing left to scan, just message + bail (no modal)
             const unscannedIds = response.candidates
                 .filter((candidate) => !candidate.is_scanned)
                 .map((candidate) => candidate.inventory_detail_id);
+
+            if (unscannedIds.length === 0) {
+                const first = response.candidates?.[0];
+                const propertyLabel =
+                    first?.property_number ??
+                    response.asset?.property_number ??
+                    first?.inventory_detail_id ??
+                    '';
+
+                const key = String(propertyLabel);
+                const lastBlocked = lastBlockedRef.current;
+
+                // Only show the message once per property within 3 seconds
+                if (!lastBlocked || lastBlocked.key !== key || now - lastBlocked.at > 3000) {
+                    lastBlockedRef.current = { key, at: now };
+                    Alert.alert(
+                        'Already scanned',
+                        `Property #${propertyLabel} has already been scanned in this cycle.`
+                    );
+                }
+
+                // Keep camera off briefly so we don't immediately re-trigger on the same QR
+                setTimeout(() => setScanned(false), 800);
+                setLoading(false);
+                return; // no setPreview → no modal
+            }
+
             const defaultSelection = unscannedIds.includes(response.asset.inventory_detail_id)
                 ? [response.asset.inventory_detail_id]
-                : unscannedIds[0]
-                    ? [unscannedIds[0]]
-                    : [];
+                : [unscannedIds[0]];
 
             setPreview({
                 qr_value: result.data,
@@ -156,14 +203,40 @@ export function useScanner(cycleId: number): UseScannerResult {
 
         try {
             const response = await ApiService.previewScan(cycleId, qrValue, { property_number: qrValue });
+
             const unscannedIds = response.candidates
                 .filter((candidate) => !candidate.is_scanned)
                 .map((candidate) => candidate.inventory_detail_id);
+
+            // 👇 same already-scanned guard for manual input (no modal)
+            if (unscannedIds.length === 0) {
+                const first = response.candidates?.[0];
+                const propertyLabel =
+                    first?.property_number ??
+                    response.asset?.property_number ??
+                    first?.inventory_detail_id ??
+                    '';
+
+                const key = String(propertyLabel);
+                const now = Date.now();
+                const lastBlocked = lastBlockedRef.current;
+
+                if (!lastBlocked || lastBlocked.key !== key || now - lastBlocked.at > 3000) {
+                    lastBlockedRef.current = { key, at: now };
+                    Alert.alert(
+                        'Already scanned',
+                        `Property #${propertyLabel} has already been scanned in this cycle.`
+                    );
+                }
+
+                setScanned(false);
+                setLoading(false);
+                return; // no setPreview → no modal
+            }
+
             const defaultSelection = unscannedIds.includes(response.asset.inventory_detail_id)
                 ? [response.asset.inventory_detail_id]
-                : unscannedIds[0]
-                    ? [unscannedIds[0]]
-                    : [];
+                : [unscannedIds[0]];
 
             setPreview({
                 qr_value: qrValue,

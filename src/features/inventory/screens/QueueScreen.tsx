@@ -11,6 +11,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { Condition, LocalScan } from '../../../types';
 import { useAuth } from '../../auth/providers/AuthProvider';
 import ApiService from '../../shared/services/apiService';
@@ -92,13 +93,10 @@ function resolveGroupStatus(scans: LocalScan[]): LocalScan['status'] {
 
 function buildGroupKey(scan: LocalScan): string {
   return [
-    // Primary grouping by RPC type, article and description
     scan.rpc_type ?? '',
     scan.article ?? '',
     scan.description ?? '',
-    // Include accountable officer, brand/model/serial when available so identical assets group together
     scan.accountable_officer ?? '',
-    // Some scans may carry Brand/ModelNumber/SerialNumber when enriched; include defensively
     (scan as unknown as Record<string, unknown>).Brand ?? '',
     (scan as unknown as Record<string, unknown>).ModelNumber ?? '',
     (scan as unknown as Record<string, unknown>).SerialNumber ?? '',
@@ -122,7 +120,6 @@ function buildPropertyPreview(scans: LocalScan[]): string {
     return propertyNumbers[0];
   }
 
-  // If a reasonable number of property numbers, show them all inline; otherwise show abbreviated preview
   if (propertyNumbers.length <= 9) {
     return propertyNumbers.join(', ');
   }
@@ -233,31 +230,48 @@ function QueueScreen(): React.JSX.Element {
     }
   }, [cycleId]);
 
+  const loadCycleStatus = useCallback(async (): Promise<void> => {
+    try {
+      const resp = await ApiService.listRpcInventoryCycles();
+      const found = Array.isArray(resp.data)
+        ? resp.data.find((c: any) => c.id === cycleId) ?? null
+        : null;
+      setCycleStatus(found?.status ?? null);
+      setCycleLabel(found?.cycle_label ?? resp.current_cycle?.label ?? null);
+    } catch (err) {
+      console.error('[QueueScreen] Failed to load cycle status:', err);
+    }
+  }, [cycleId]);
+
+  // ---- Initial load ----
   useEffect(() => {
     const initialLoad = setTimeout(() => {
       void loadConditions();
       void loadScans();
-      void (async () => {
-        try {
-          const resp = await ApiService.listRpcInventoryCycles();
-          const found = Array.isArray(resp.data) ? resp.data.find((c: any) => c.id === cycleId) ?? null : null;
-          setCycleStatus(found?.status ?? null);
-          // Prefer the cycle label from server; for older responses use current_cycle.label
-          setCycleLabel(found?.cycle_label ?? resp.current_cycle?.label ?? null);
-        } catch (err) {
-          console.error('[QueueScreen] Failed to load cycle status:', err);
-        }
-      })();
+      void loadCycleStatus();
     }, 0);
+
+    return () => clearTimeout(initialLoad);
+  }, [loadConditions, loadScans, loadCycleStatus]);
+
+  // ---- Refetch whenever the tab is focused ----
+  useFocusEffect(
+    useCallback(() => {
+      void loadScans();
+      void loadCycleStatus();
+      return () => { };
+    }, [loadScans, loadCycleStatus])
+  );
+
+  // ---- Poll every 5s while mounted ----
+  useEffect(() => {
     const interval = setInterval(() => {
       void loadScans();
-    }, 10000);
+      void loadCycleStatus();
+    }, 5000);
 
-    return () => {
-      clearTimeout(initialLoad);
-      clearInterval(interval);
-    };
-  }, [loadConditions, loadScans]);
+    return () => clearInterval(interval);
+  }, [loadScans, loadCycleStatus]);
 
   const groupedScans = buildQueueGroups(scans, conditionLookup);
   const activeGroup = groupedScans.find((group) => group.key === activeGroupKey) ?? null;
@@ -266,6 +280,7 @@ function QueueScreen(): React.JSX.Element {
     setRefreshing(true);
     try {
       await loadScans();
+      await loadCycleStatus();
     } finally {
       setRefreshing(false);
     }

@@ -69,7 +69,7 @@ export default function ScannerScreen({ cycleId, cycleTotals }: ScannerScreenPro
       <CameraView
         onBarcodeScanned={scanned ? undefined : onBarcodeScanned}
         barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
-        style={StyleSheet.absoluteFillObject}
+        style={StyleSheet.absoluteFill}
       />
 
       <View style={styles.overlay}>
