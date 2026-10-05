@@ -230,6 +230,11 @@ class ApiService {
       '/rpc-inventory/helpers/conditions'
     );
     return response.data.data;
+  } async getRpcInventoryScan(scanId: number): Promise<RpcInventoryScanRecord> {
+    const response = await this.api.get<{ scan: RpcInventoryScanRecord }>(
+      `/rpc-inventory/scans/${scanId}`
+    );
+    return response.data.scan;
   }
 }
 

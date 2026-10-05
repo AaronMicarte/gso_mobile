@@ -31,12 +31,12 @@ export interface RpcCycle {
 export interface RpcInventoryCyclesResponse {
     data: RpcCycle[];
     current_cycle: {
+        id: number;
         start_year: number;
         end_year: number;
         label: string;
-    };
+    } | null;
 }
-
 export interface ScanAsset {
     inventory_detail_id: number;
     property_id: number | null;
@@ -364,14 +364,16 @@ export interface LocalScan {
 export interface BulkScanPayload {
     scans: {
         client_uuid: string;
-        inventory_detail_id: number;
-        property_id: number | null;
+        inventory_detail_id?: number | null;
+        property_id?: number | null;
+        property_number?: string | null;
         condition_id: number;
         scanned_at: string;
         remarks: string | null;
         device_id: string;
     }[];
 }
+
 
 export interface BulkScanResult {
     client_uuid: string;

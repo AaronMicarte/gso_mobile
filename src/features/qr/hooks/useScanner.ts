@@ -18,7 +18,7 @@ interface UseScannerResult {
     loading: boolean;
     preview: ScannerPreview | null;
     conditions: Condition[];
-    queueStats: { synced: number; failed: number; total: number };
+    queueStats: { synced: number; failed: number; total: number; pending: number };
     selectedCondition: number | null;
     remarks: string;
     requestCameraPermission: () => Promise<void>;
@@ -37,16 +37,96 @@ function toPreviewCycleId(preview: ScannerPreview | null, cycleId: number): numb
     return preview?.cycle_id ?? cycleId;
 }
 
+const DEFAULT_CONDITIONS: Condition[] = [
+    { ConditionID: 1, ConditionName: 'Serviceable' },
+    { ConditionID: 2, ConditionName: 'Unserviceable' },
+];
+
+interface ParsedQrInfo {
+    propertyId: number | null;
+    inventoryDetailId: number | null;
+    propertyNumber: string | null;
+    rawText: string;
+}
+
+function parseQrPayload(data: string): ParsedQrInfo {
+    const trimmed = (data || '').trim();
+    let propertyId: number | null = null;
+    let inventoryDetailId: number | null = null;
+    let propertyNumber: string | null = null;
+
+    if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+        try {
+            const parsed = JSON.parse(trimmed);
+            const pid = parsed.property_id ?? parsed.propertyId ?? parsed.PropertyID;
+            if (pid) propertyId = Number(pid);
+            const did = parsed.inventory_detail_id ?? parsed.inventoryDetailId ?? parsed.InventoryDetailID;
+            if (did) inventoryDetailId = Number(did);
+            const pnum = parsed.property_number ?? parsed.propertyNumber ?? parsed.PropertyNumber;
+            if (pnum) propertyNumber = String(pnum);
+        } catch {
+            // Ignore JSON parse error
+        }
+    }
+
+    if (!propertyId && !inventoryDetailId) {
+        const scanMatch = trimmed.match(/\/qr\/scan\/(\d+)/i);
+        if (scanMatch && scanMatch[1]) {
+            propertyId = parseInt(scanMatch[1], 10);
+        }
+
+        const propParam = trimmed.match(/[?&](?:property_id|propertyId|PropertyID)=(\d+)/i);
+        if (propParam && propParam[1]) {
+            propertyId = parseInt(propParam[1], 10);
+        }
+
+        const detailParam = trimmed.match(/[?&](?:inventory_detail_id|inventoryDetailId|detail)=(\d+)/i);
+        if (detailParam && detailParam[1]) {
+            inventoryDetailId = parseInt(detailParam[1], 10);
+        }
+
+        const propNumParam = trimmed.match(/[?&](?:property_number|propertyNumber)=([^&]+)/i);
+        if (propNumParam && propNumParam[1]) {
+            try {
+                propertyNumber = decodeURIComponent(propNumParam[1]);
+            } catch {
+                propertyNumber = propNumParam[1];
+            }
+        }
+    }
+
+    if (!propertyId && !inventoryDetailId && /^\d+$/.test(trimmed)) {
+        propertyId = parseInt(trimmed, 10);
+    }
+
+    if (!propertyNumber) {
+        if (propertyId) {
+            propertyNumber = `ID #${propertyId}`;
+        } else if (inventoryDetailId) {
+            propertyNumber = `Detail #${inventoryDetailId}`;
+        } else {
+            propertyNumber = trimmed;
+        }
+    }
+
+    return {
+        propertyId: propertyId && !isNaN(propertyId) && propertyId > 0 ? propertyId : null,
+        inventoryDetailId: inventoryDetailId && !isNaN(inventoryDetailId) && inventoryDetailId > 0 ? inventoryDetailId : null,
+        propertyNumber,
+        rawText: trimmed,
+    };
+}
+
 export function useScanner(cycleId: number): UseScannerResult {
     const [hasPermission, setHasPermission] = useState<boolean | null>(null);
     const [scanned, setScanned] = useState(false);
     const [preview, setPreview] = useState<ScannerPreview | null>(null);
-    const [conditions, setConditions] = useState<Condition[]>([]);
-    const [selectedCondition, setSelectedCondition] = useState<number | null>(null);
+    const [conditions, setConditions] = useState<Condition[]>(DEFAULT_CONDITIONS);
+    const [selectedCondition, setSelectedCondition] = useState<number | null>(DEFAULT_CONDITIONS[0].ConditionID);
     const [remarks, setRemarks] = useState('');
     const [selectedInventoryDetailIds, setSelectedInventoryDetailIds] = useState<number[]>([]);
     const [loading, setLoading] = useState(false);
-    const [queueStats, setQueueStats] = useState({ synced: 0, failed: 0, total: 0 });
+    const [queueStats, setQueueStats] = useState({ synced: 0, failed: 0, total: 0, pending: 0 });
 
     // Prevents the same QR from hammering the API when the camera is still in frame
     const lastScanRef = useRef<{ value: string; at: number } | null>(null);
@@ -55,14 +135,15 @@ export function useScanner(cycleId: number): UseScannerResult {
     // Prevents the "Already scanned" Alert from spamming on the same property
     const lastBlockedRef = useRef<{ key: string; at: number } | null>(null);
 
-    // FIX #1: Removed reconcileSyncedScans from here.
-    // It was fetching ALL remote scans (paginated) on every single scan confirm.
-    // Now it only reads from the local SQLite queue — fast.
-    // reconcileSyncedScans is only called in refreshScanner (manual refresh button).
     const updateQueueStats = useCallback(async () => {
         try {
             const stats = await ScanQueueService.getQueueStats(cycleId);
-            setQueueStats(stats);
+            setQueueStats({
+                total: stats.synced + stats.pending + stats.failed,
+                synced: stats.synced,
+                pending: stats.pending,
+                failed: stats.failed,
+            });
         } catch (error) {
             console.error('Failed to load queue stats:', error);
         }
@@ -76,11 +157,16 @@ export function useScanner(cycleId: number): UseScannerResult {
     const loadConditions = useCallback(async (): Promise<void> => {
         try {
             const conds = await ApiService.getConditions();
-            setConditions(conds);
-            setSelectedCondition((current) => current ?? conds[0]?.ConditionID ?? null);
+            if (conds && conds.length > 0) {
+                setConditions(conds);
+                setSelectedCondition((current) => current ?? conds[0]?.ConditionID ?? 1);
+                return;
+            }
         } catch (error) {
-            console.error('Failed to load conditions:', error);
+            console.warn('[useScanner] Offline or failed to load conditions online, using defaults:', error);
         }
+        setConditions(DEFAULT_CONDITIONS);
+        setSelectedCondition((current) => current ?? DEFAULT_CONDITIONS[0].ConditionID);
     }, []);
 
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -178,6 +264,69 @@ export function useScanner(cycleId: number): UseScannerResult {
             console.error('Failed to preview scan:', error);
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const err: any = error;
+            const isNetworkError =
+                !err?.response ||
+                err?.code === 'ERR_NETWORK' ||
+                err?.code === 'ECONNABORTED' ||
+                (typeof err?.message === 'string' && err.message.toLowerCase().includes('network'));
+
+            if (isNetworkError) {
+                const parsed = parseQrPayload(result.data);
+                const isAlreadyInQueue = await ScanQueueService.isAlreadyScanned(cycleId, parsed);
+                if (isAlreadyInQueue) {
+                    const key = String(parsed.propertyNumber);
+                    const lastBlocked = lastBlockedRef.current;
+                    if (!lastBlocked || lastBlocked.key !== key || now - lastBlocked.at > 3000) {
+                        lastBlockedRef.current = { key, at: now };
+                        Alert.alert(
+                            'Already scanned',
+                            `Property #${parsed.propertyNumber} has already been scanned in this cycle (queued locally).`
+                        );
+                    }
+                    setTimeout(() => setScanned(false), 800);
+                    setLoading(false);
+                    return;
+                }
+
+                const resolvedCondition = selectedCondition ?? conditions[0]?.ConditionID ?? 1;
+                const offlineDetailId = parsed.inventoryDetailId ?? 0;
+                const offlineAsset: any = {
+                    inventory_detail_id: offlineDetailId,
+                    property_id: parsed.propertyId,
+                    property_number: parsed.propertyNumber,
+                    article: 'Property Item',
+                    description: `Offline scan: ${parsed.propertyNumber}`,
+                    condition_id: resolvedCondition,
+                    unit_of_measure: 'unit',
+                    unit_value: 0,
+                    accountable_officer: 'Unknown (Offline)',
+                    rpc_type: 'RPCPPE',
+                };
+
+                const offlineCandidate = {
+                    inventory_detail_id: offlineDetailId,
+                    property_id: parsed.propertyId,
+                    property_number: parsed.propertyNumber,
+                    is_scanned: false,
+                    existing_scan_id: null,
+                };
+
+                setPreview({
+                    qr_value: result.data,
+                    cycle_id: cycleId,
+                    asset: offlineAsset,
+                    already_scanned: false,
+                    existing_scan_id: null,
+                    group_total_count: 1,
+                    group_scanned_count: 0,
+                    group_remaining_count: 1,
+                    candidates: [offlineCandidate],
+                });
+                setSelectedInventoryDetailIds([offlineDetailId]);
+                setSelectedCondition(resolvedCondition);
+                return;
+            }
+
             if (err && err.response) {
                 const status = err.response.status;
                 const message =
@@ -250,6 +399,70 @@ export function useScanner(cycleId: number): UseScannerResult {
             console.error('Failed to preview scan (manual):', error);
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const err: any = error;
+            const isNetworkError =
+                !err?.response ||
+                err?.code === 'ERR_NETWORK' ||
+                err?.code === 'ECONNABORTED' ||
+                (typeof err?.message === 'string' && err.message.toLowerCase().includes('network'));
+
+            if (isNetworkError) {
+                const parsed = parseQrPayload(qrValue);
+                const isAlreadyInQueue = await ScanQueueService.isAlreadyScanned(cycleId, parsed);
+                if (isAlreadyInQueue) {
+                    const key = String(parsed.propertyNumber);
+                    const now = Date.now();
+                    const lastBlocked = lastBlockedRef.current;
+                    if (!lastBlocked || lastBlocked.key !== key || now - lastBlocked.at > 3000) {
+                        lastBlockedRef.current = { key, at: now };
+                        Alert.alert(
+                            'Already scanned',
+                            `Property #${parsed.propertyNumber} has already been scanned in this cycle (queued locally).`
+                        );
+                    }
+                    setScanned(false);
+                    setLoading(false);
+                    return;
+                }
+
+                const resolvedCondition = selectedCondition ?? conditions[0]?.ConditionID ?? 1;
+                const offlineDetailId = parsed.inventoryDetailId ?? 0;
+                const offlineAsset: any = {
+                    inventory_detail_id: offlineDetailId,
+                    property_id: parsed.propertyId,
+                    property_number: parsed.propertyNumber,
+                    article: 'Property Item',
+                    description: `Offline manual scan: ${parsed.propertyNumber}`,
+                    condition_id: resolvedCondition,
+                    unit_of_measure: 'unit',
+                    unit_value: 0,
+                    accountable_officer: 'Unknown (Offline)',
+                    rpc_type: 'RPCPPE',
+                };
+
+                const offlineCandidate = {
+                    inventory_detail_id: offlineDetailId,
+                    property_id: parsed.propertyId,
+                    property_number: parsed.propertyNumber,
+                    is_scanned: false,
+                    existing_scan_id: null,
+                };
+
+                setPreview({
+                    qr_value: qrValue,
+                    cycle_id: cycleId,
+                    asset: offlineAsset,
+                    already_scanned: false,
+                    existing_scan_id: null,
+                    group_total_count: 1,
+                    group_scanned_count: 0,
+                    group_remaining_count: 1,
+                    candidates: [offlineCandidate],
+                });
+                setSelectedInventoryDetailIds([offlineDetailId]);
+                setSelectedCondition(resolvedCondition);
+                return;
+            }
+
             if (err && err.response) {
                 const status = err.response.status;
                 const message =
@@ -272,8 +485,12 @@ export function useScanner(cycleId: number): UseScannerResult {
             throw new Error('Please select a condition and preview a property to scan');
         }
 
-        const detailId = preview.asset?.inventory_detail_id ?? selectedInventoryDetailIds[0];
-        if (!detailId || detailId <= 0) {
+        const detailId = preview.asset?.inventory_detail_id ?? selectedInventoryDetailIds[0] ?? 0;
+        const candidate = (preview.candidates ?? []).find((c) => c.inventory_detail_id === detailId) ?? null;
+        const propertyNumber = candidate?.property_number ?? preview.asset?.property_number ?? null;
+        const propertyId = candidate?.property_id ?? preview.asset?.property_id ?? null;
+
+        if (!detailId && !propertyId && !propertyNumber) {
             throw new Error('No valid property selected for scanning');
         }
 
@@ -285,14 +502,11 @@ export function useScanner(cycleId: number): UseScannerResult {
             const cycleToUse = toPreviewCycleId(preview, cycleId);
             const now = new Date().toISOString();
 
-            const candidate = (preview.candidates ?? []).find((c) => c.inventory_detail_id === detailId) ?? null;
-            const propertyNumber = candidate?.property_number ?? preview.asset?.property_number ?? null;
-            const propertyId = candidate?.property_id ?? preview.asset?.property_id ?? null;
-
             await ScanQueueService.addScan({
                 cycle_id: cycleToUse,
                 inventory_detail_id: detailId,
                 property_id: propertyId,
+                property_number: propertyNumber,
                 condition_id: selectedCondition,
                 scanned_at: now,
                 remarks: remarks.trim() || null,
@@ -300,7 +514,6 @@ export function useScanner(cycleId: number): UseScannerResult {
                 user_id: user?.UserID ?? 0,
                 article: preview.asset?.article ?? null,
                 description: preview.asset?.description ?? null,
-                property_number: propertyNumber,
                 unit_of_measure: preview.asset?.unit_of_measure ?? null,
                 unit_value: preview.asset?.unit_value ?? null,
                 accountable_officer: preview.asset?.accountable_officer ?? null,
@@ -310,7 +523,6 @@ export function useScanner(cycleId: number): UseScannerResult {
                 SerialNumber: (preview.asset as any)?.SerialNumber ?? null,
             });
 
-            // FIX #1 continued: updateQueueStats now only reads local SQLite — no network call.
             await updateQueueStats();
             setSelectedInventoryDetailIds([]);
             resetScan();

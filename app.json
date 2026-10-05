@@ -15,8 +15,16 @@
       }
     },
     "android": {
+      "package": "com.gso.mobilescanner",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "backgroundColor": "#1e3a8a"
+      },
       "permissions": [
-        "android.permission.CAMERA"
+        "android.permission.CAMERA",
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "web": {},
@@ -38,6 +46,16 @@
       "expo-secure-store",
       "expo-sqlite",
       "expo-status-bar"
-    ]
+    ],
+    "extra": {
+      "expo-navigation-bar": {
+        "style": "light",
+        "hidden": true
+      },
+      "eas": {
+        "projectId": "3b238612-6d59-4325-b190-c4259dac10d1"
+      }
+    },
+    "owner": "aaronmicarte"
   }
 }

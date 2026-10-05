@@ -44,11 +44,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
                     const found = Array.isArray(resp.data)
                         ? resp.data.find((c: any) => Number(c.start_year) === Number(year))
                         : null;
-                    setCycleId(found?.id ?? 0);
+                    const resolvedId = found?.id ?? resp.current_cycle?.id ?? 0;
+                    if (resolvedId > 0) {
+                        setCycleId(resolvedId);
+                        await AuthService.setSecureItem('last_active_cycle_id', String(resolvedId));
+                    } else {
+                        const cached = await AuthService.getSecureItem('last_active_cycle_id');
+                        setCycleId(cached ? Number(cached) : 0);
+                    }
                 } catch (e) {
-                    // Fallback to 0 when cycle cannot be resolved
-                    setCycleId(0);
-                    console.error('[AuthProvider] Failed to resolve active cycle:', e);
+                    // Fallback to cached cycleId when offline or network fails
+                    const cached = await AuthService.getSecureItem('last_active_cycle_id');
+                    setCycleId(cached ? Number(cached) : 0);
+                    console.warn('[AuthProvider] Offline or network error; using cached cycle ID:', cached);
                 }
 
                 void SyncService.start();
@@ -87,10 +95,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
             const resp = await ApiService.listRpcInventoryCycles();
             const year = resp.current_cycle?.start_year ?? null;
             const found = Array.isArray(resp.data) ? resp.data.find((c: any) => Number(c.start_year) === Number(year)) : null;
-            setCycleId(found?.id ?? 0);
+            const resolvedId = found?.id ?? resp.current_cycle?.id ?? 0;
+            if (resolvedId > 0) {
+                setCycleId(resolvedId);
+                await AuthService.setSecureItem('last_active_cycle_id', String(resolvedId));
+            }
         } catch (e) {
-            setCycleId(0);
-            console.error('[AuthProvider] Failed to resolve active cycle after sign-in:', e);
+            const cached = await AuthService.getSecureItem('last_active_cycle_id');
+            setCycleId(cached ? Number(cached) : 0);
+            console.warn('[AuthProvider] Failed to resolve active cycle after sign-in; using cached:', cached);
         }
 
         void SyncService.start();

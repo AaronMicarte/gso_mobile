@@ -41,6 +41,22 @@ class AuthService {
     return deviceId;
   }
 
+  async getSecureItem(key: string): Promise<string | null> {
+    try {
+      return await SecureStore.getItemAsync(key);
+    } catch {
+      return null;
+    }
+  }
+
+  async setSecureItem(key: string, value: string): Promise<void> {
+    try {
+      await SecureStore.setItemAsync(key, value);
+    } catch (e) {
+      console.warn(`Failed to set SecureStore item for ${key}:`, e);
+    }
+  }
+
   private generateDeviceId(): string {
     const timestamp = Date.now().toString(36);
     const random = Math.random().toString(36).substring(2);

@@ -17,6 +17,7 @@ import { useAuth } from '../../auth/providers/AuthProvider';
 import ApiService from '../../shared/services/apiService';
 import ScanQueueService from '../services/scanQueueService';
 import SyncService from '../services/syncService';
+import * as Network from 'expo-network';
 
 type QueueGroup = {
   key: string;
@@ -33,8 +34,7 @@ type QueueGroup = {
 
 const CONDITION_FALLBACKS: Record<number, string> = {
   1: 'Serviceable',
-  2: 'Unserviceable'
-  // 6: 'Under Repair',
+  2: 'Unserviceable',
 };
 
 function getScanTimestamp(scan: LocalScan): number {
@@ -203,12 +203,13 @@ function QueueScreen(): React.JSX.Element {
           accumulator[condition.ConditionID] = condition.ConditionName;
           return accumulator;
         },
-        {}
+        { 1: 'Serviceable', 2: 'Unserviceable' }
       );
 
       setConditionLookup(nextLookup);
     } catch (error) {
-      console.error('[QueueScreen] Failed to load conditions:', error);
+      console.warn('[QueueScreen] Failed to load conditions online; using defaults:', error);
+      setConditionLookup({ 1: 'Serviceable', 2: 'Unserviceable' });
     }
   }, []);
 
@@ -224,7 +225,11 @@ function QueueScreen(): React.JSX.Element {
       ]);
 
       setScans(allScans);
-      setStats(queueStats);
+      const synced = queueStats.synced;
+      const pending = queueStats.pending;
+      const failed = queueStats.failed;
+      const total = synced + pending + failed;
+      setStats({ total, synced, pending, failed });
     } catch (error) {
       console.error('[QueueScreen] Failed to load scans:', error);
     }
@@ -243,7 +248,6 @@ function QueueScreen(): React.JSX.Element {
     }
   }, [cycleId]);
 
-  // ---- Initial load ----
   useEffect(() => {
     const initialLoad = setTimeout(() => {
       void loadConditions();
@@ -254,7 +258,6 @@ function QueueScreen(): React.JSX.Element {
     return () => clearTimeout(initialLoad);
   }, [loadConditions, loadScans, loadCycleStatus]);
 
-  // ---- Refetch whenever the tab is focused ----
   useFocusEffect(
     useCallback(() => {
       void loadScans();
@@ -263,7 +266,6 @@ function QueueScreen(): React.JSX.Element {
     }, [loadScans, loadCycleStatus])
   );
 
-  // ---- Poll every 5s while mounted ----
   useEffect(() => {
     const interval = setInterval(() => {
       void loadScans();
@@ -292,12 +294,33 @@ function QueueScreen(): React.JSX.Element {
       return;
     }
 
+    // 1) Nothing queued? Bail out immediately — no network, no wait.
+    if (stats.pending === 0 && stats.failed === 0) {
+      Alert.alert('Info', 'No pending scans to sync.');
+      return;
+    }
+
+    // 2) Check network reachability to fail fast when offline.
+    try {
+      const net = await Network.getNetworkStateAsync();
+      if (!net.isConnected) {
+        Alert.alert('Offline', 'No internet connection. Scans will sync automatically once you are back online.');
+        return;
+      }
+      // Note: isInternetReachable is unreliable on some Android versions,
+      // so we only hard-fail on isConnected === false.
+    } catch {
+      // If the network check itself fails, fall through and let sync try.
+    }
+
     setSyncing(true);
     try {
       const result = await SyncService.manualSync();
 
-      if (!result || (result.synced === 0 && result.failed === 0 && result.total === 0)) {
-        Alert.alert('Info', 'No pending scans to sync');
+      if (result.total === 0) {
+        Alert.alert('Info', 'No scans queued to sync.');
+      } else if (result.synced === 0 && result.failed === 0) {
+        Alert.alert('Info', 'Sync ran but nothing was processed.');
       } else {
         Alert.alert(
           'Sync Result',

@@ -133,8 +133,9 @@ class SyncService {
     const payload: BulkScanPayload = {
       scans: scans.map((scan) => ({
         client_uuid: scan.client_uuid,
-        inventory_detail_id: scan.inventory_detail_id,
-        property_id: scan.property_id,
+        inventory_detail_id: scan.inventory_detail_id && scan.inventory_detail_id > 0 ? scan.inventory_detail_id : null,
+        property_id: scan.property_id && scan.property_id > 0 ? scan.property_id : null,
+        property_number: scan.property_number ?? null,
         condition_id: scan.condition_id,
         scanned_at: this.normalizeScannedAt(scan.scanned_at),
         remarks: scan.remarks,
@@ -153,12 +154,7 @@ class SyncService {
             await ScanQueueService.markSynced(r.client_uuid, (r as any).scan_id ?? null);
             synced += 1;
           } else if (r.status === 'duplicate') {
-            if ((r as any).scan_id) {
-              // FIX #2: Backend now always returns scan_id for duplicates too.
-              await ScanQueueService.markSynced(r.client_uuid, (r as any).scan_id);
-            } else {
-              await ScanQueueService.deleteScan(r.client_uuid);
-            }
+            await ScanQueueService.markSynced(r.client_uuid, (r as any).scan_id ?? null);
             synced += 1;
           } else if (r.status === 'error') {
             const msg = r.message || 'Server reported error';
@@ -179,16 +175,23 @@ class SyncService {
     } catch (error) {
       const status = axios.isAxiosError(error) ? error.response?.status : undefined;
       const details = axios.isAxiosError(error) ? error.response?.data : undefined;
+      const isNetworkError =
+        !status ||
+        (axios.isAxiosError(error) && (!error.response || error.code === 'ERR_NETWORK' || error.code === 'ECONNABORTED'));
+
       const msg =
         error instanceof Error
-          ? `${error.message}${status ? ` (HTTP ${status})` : ''}${details ? `: ${JSON.stringify(details)}` : ''
-          }`
+          ? `${error.message}${status ? ` (HTTP ${status})` : ''}${details ? `: ${JSON.stringify(details)}` : ''}`
           : 'Unknown';
 
-      for (const s of scans) {
-        await ScanQueueService.markFailed(s.client_uuid, msg);
-        failed += 1;
-        failures.push({ client_uuid: s.client_uuid, message: msg });
+      if (isNetworkError) {
+        console.warn('[SyncService] Device is offline or server unreachable. Scans remain queued for automatic sync once reconnected:', msg);
+      } else {
+        for (const s of scans) {
+          await ScanQueueService.markFailed(s.client_uuid, msg);
+          failed += 1;
+          failures.push({ client_uuid: s.client_uuid, message: msg });
+        }
       }
     }
     return { synced, failed, failures };
@@ -216,6 +219,7 @@ class SyncService {
     total: number;
     failures: Array<{ client_uuid: string; message: string }>;
   }> {
+    await ScanQueueService.retryAllFailedScans();
     return this.syncPendingScans();
   }
 

@@ -140,7 +140,7 @@ export function PropertyQrScreen(): React.JSX.Element {
                 <CameraView
                     onBarcodeScanned={scanned || loading ? undefined : onBarcodeScanned}
                     barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
-                    style={StyleSheet.absoluteFillObject}
+                    style={StyleSheet.absoluteFill}
                 />
             ) : (
                 <View style={styles.pasteBackdrop} />
@@ -326,7 +326,7 @@ const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#0b1220' },
     centered: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16, backgroundColor: '#0b1220' },
     infoText: { fontSize: 16, color: '#f8fafc' },
-    pasteBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: '#0b1220' },
+    pasteBackdrop: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundColor: '#0b1220' },
     overlay: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, justifyContent: 'space-between', backgroundColor: 'rgba(11,18,32,0.35)' },
     headerBar: { paddingHorizontal: 16, paddingTop: 28, paddingBottom: 12 },
     headerTitle: { fontSize: 24, fontWeight: '900', color: '#f8fafc' },

@@ -18,7 +18,7 @@ interface CycleSelectScreenProps {
     onSelectCycle: (cycleId: number) => void;
 }
 
-const REFRESH_INTERVAL_MS = 10000;
+const REFRESH_INTERVAL_MS = 60000;
 
 function formatCycleDate(value: string | null): string {
     if (!value) {
@@ -49,8 +49,7 @@ export function CycleSelectScreen({ onSelectCycle }: CycleSelectScreenProps): Re
             const response = await ApiService.listRpcInventoryCycles();
             setCycles(response.data);
         } catch (error) {
-            console.error('Failed to load cycles:', error);
-            setCycles([]);
+            console.warn('[CycleSelect] Offline — keeping cached cycles');
         } finally {
             setLoading(false);
         }

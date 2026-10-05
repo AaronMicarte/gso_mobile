@@ -63,8 +63,6 @@ interface AddScanInput {
 }
 
 function createClientUuid(): string {
-    // Legacy format used by existing data: <hex timestamp>-<8 hex>-<8 hex>
-    // Example: 19de7d157dd-9af8c236-bdc52b41
     const timestamp = Date.now().toString(16);
     const randomA = Math.random().toString(16).slice(2, 10);
     const randomB = Math.random().toString(16).slice(2, 10);
@@ -75,7 +73,6 @@ function sanitizeClientUuid(u?: string | null): string | null {
     if (!u || typeof u !== 'string') return null;
     const trimmed = u.trim();
     if (!trimmed) return null;
-    // Backend validation currently enforces max:36
     if (trimmed.length > 36) return null;
     return trimmed;
 }
@@ -85,21 +82,13 @@ class ScanQueueService {
     private isInitialized = false;
 
     private async ensureInitialized(): Promise<void> {
-        if (this.isInitialized && this.db) {
-            return;
-        }
+        if (this.isInitialized && this.db) return;
         await this.init();
     }
 
     private async runWithDatabase<T>(operation: (db: DatabaseConnection) => Promise<T>): Promise<T> {
         await this.ensureInitialized();
-
-        if (!this.db) {
-            throw new Error('Database not initialized');
-        }
-
-        // SQLite wrapper now handles all stale handle recovery internally
-        // No need for retry logic here
+        if (!this.db) throw new Error('Database not initialized');
         return operation(this.db);
     }
 
@@ -113,16 +102,59 @@ class ScanQueueService {
                 [cycleId, inventoryDetailId]
             )
         );
-
         return result[0] ?? null;
     }
 
-    async init(): Promise<void> {
-        if (this.isInitialized && this.db) {
-            return;
+    async isAlreadyScanned(
+        cycleId: number,
+        identifiers: {
+            inventoryDetailId?: number | null;
+            propertyId?: number | null;
+            propertyNumber?: string | null;
+        }
+    ): Promise<boolean> {
+        const { inventoryDetailId, propertyId, propertyNumber } = identifiers;
+        if (!cycleId || cycleId <= 0) return false;
+
+        const clauses: string[] = [];
+        const params: Array<string | number> = [cycleId];
+
+        if (inventoryDetailId && inventoryDetailId > 0) {
+            clauses.push('inventory_detail_id = ?');
+            params.push(inventoryDetailId);
+        }
+        if (propertyId && propertyId > 0) {
+            clauses.push('property_id = ?');
+            params.push(propertyId);
+        }
+        if (propertyNumber && propertyNumber.trim()) {
+            clauses.push('property_number = ?');
+            params.push(propertyNumber.trim());
         }
 
-        // open a runtime promisified sqlite client
+        if (clauses.length === 0) return false;
+
+        const sql = `SELECT COUNT(*) as count FROM scan_queue WHERE cycle_id = ? AND (${clauses.join(' OR ')})`;
+        const result = await this.runWithDatabase((db) =>
+            db.getAllAsync<{ count: number }>(sql, params)
+        );
+
+        return Number(result?.[0]?.count ?? 0) > 0;
+    }
+
+    async retryAllFailedScans(cycleId?: number): Promise<void> {
+        let query = `UPDATE scan_queue SET status = 'pending', error_message = NULL WHERE status = 'failed'`;
+        const params: Array<string | number> = [];
+        if (typeof cycleId === 'number' && cycleId > 0) {
+            query += ` AND cycle_id = ?`;
+            params.push(cycleId);
+        }
+        await this.runWithDatabase((db) => db.execAsync(query, params));
+    }
+
+    async init(): Promise<void> {
+        if (this.isInitialized && this.db) return;
+
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         this.db = await openDatabaseAsync(DB_NAME as string);
         await this.createTables();
@@ -136,7 +168,6 @@ class ScanQueueService {
     private async createTables(): Promise<void> {
         if (!this.db) return;
 
-        // Ensure base table exists
         await this.db.execAsync(`
             CREATE TABLE IF NOT EXISTS scan_queue (
                 id TEXT PRIMARY KEY,
@@ -162,8 +193,6 @@ class ScanQueueService {
             CREATE INDEX IF NOT EXISTS idx_created_at ON scan_queue(created_at);
         `);
 
-        // Migration: add any missing asset-detail columns to existing table
-        // Query current columns
         const cols = await this.db.getAllAsync<ScanQueueColumnInfo>("PRAGMA table_info('scan_queue')");
         const existing = new Set<string>((cols || []).map((column) => String(column.name)));
 
@@ -184,7 +213,6 @@ class ScanQueueService {
 
         for (const col of needed) {
             if (!existing.has(col.name)) {
-                // ALTER TABLE to add the missing column
                 try {
                     // eslint-disable-next-line @typescript-eslint/no-floating-promises
                     await this.db.execAsync(`ALTER TABLE scan_queue ADD COLUMN ${col.def}`);
@@ -213,7 +241,6 @@ class ScanQueueService {
 
         for (const row of invalidRows) {
             let nextUuid = createClientUuid();
-            // Best-effort collision avoidance in local queue
             // eslint-disable-next-line no-constant-condition
             while (true) {
                 const existing = await this.db.getAllAsync<{ count: number }>(
@@ -298,10 +325,26 @@ class ScanQueueService {
             rem = remarks || null;
         }
 
-        if (cycleId > 0 && invId > 0) {
-            const existingScan = await this.getScanByCycleAndDetail(cycleId, invId);
-            if (existingScan) {
-                return existingScan;
+        if (cycleId > 0) {
+            if (invId > 0) {
+                const existingScan = await this.getScanByCycleAndDetail(cycleId, invId);
+                if (existingScan) return existingScan;
+            } else if (propId && propId > 0) {
+                const result = await this.runWithDatabase((db) =>
+                    db.getAllAsync<LocalScan>(
+                        `SELECT * FROM scan_queue WHERE cycle_id = ? AND property_id = ? ORDER BY created_at DESC LIMIT 1`,
+                        [cycleId, propId]
+                    )
+                );
+                if (result && result.length > 0) return result[0];
+            } else if (propertyNumber && propertyNumber.trim()) {
+                const result = await this.runWithDatabase((db) =>
+                    db.getAllAsync<LocalScan>(
+                        `SELECT * FROM scan_queue WHERE cycle_id = ? AND property_number = ? ORDER BY created_at DESC LIMIT 1`,
+                        [cycleId, propertyNumber.trim()]
+                    )
+                );
+                if (result && result.length > 0) return result[0];
             }
         }
 
@@ -420,7 +463,6 @@ class ScanQueueService {
     }
 
     async deleteScan(clientUuid: string, localOnly: boolean = false): Promise<void> {
-        // First, fetch the local scan record so we can attempt to remove it from the backend if needed
         const rows = await this.runWithDatabase((db) =>
             db.getAllAsync(`SELECT * FROM scan_queue WHERE client_uuid = ? LIMIT 1`, [clientUuid])
         );
@@ -428,14 +470,11 @@ class ScanQueueService {
         const scan = (rows && rows.length > 0 ? (rows[0] as unknown as LocalScan) : null);
 
         if (scan && !localOnly) {
-            // If the scan was already synced to the server, try to delete the corresponding remote record
             if (scan.status === 'synced' || scan.status === 'syncing' || scan.remote_scan_id) {
                 try {
                     if (scan.remote_scan_id) {
-                        // Prefer exact server id when available
                         await ApiService.deleteRpcScan(scan.remote_scan_id);
                     } else {
-                        // Fallback: search remote scans by inventory_detail_id
                         let page = 1;
                         let lastPage = 1;
 
@@ -466,7 +505,6 @@ class ScanQueueService {
                         } while (page <= lastPage);
                     }
                 } catch (err) {
-                    // 404 = already gone on the server, which is what we wanted anyway.
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     const status = (err as any)?.response?.status;
                     if (status !== 404) {
@@ -476,7 +514,6 @@ class ScanQueueService {
             }
         }
 
-        // Always remove the local record
         await this.runWithDatabase((db) => db.execAsync(`DELETE FROM scan_queue WHERE client_uuid = ?`, [clientUuid]));
     }
 
@@ -492,6 +529,48 @@ class ScanQueueService {
         query += ` WHERE client_uuid = ?`;
 
         await this.runWithDatabase((db) => db.execAsync(query, params));
+
+        if (typeof remoteScanId === 'number' && remoteScanId > 0) {
+            await this.refreshAssetDetails(clientUuid, remoteScanId);
+        }
+    }
+
+    /**
+     * Fetch the real asset details from the server and update the local row.
+     * Fixes the "Property Item / Offline scan / Unknown (Offline)" placeholders
+     * that were written when the scan was queued offline.
+     */
+    async refreshAssetDetails(clientUuid: string, remoteScanId: number): Promise<void> {
+        try {
+            const remote = await ApiService.getRpcInventoryScan(remoteScanId);
+            await this.runWithDatabase((db) =>
+                db.execAsync(
+                    `UPDATE scan_queue SET
+                        article = ?,
+                        description = ?,
+                        property_number = ?,
+                        accountable_officer = ?,
+                        unit_of_measure = ?,
+                        unit_value = ?,
+                        rpc_type = ?,
+                        condition_name = ?
+                     WHERE client_uuid = ?`,
+                    [
+                        remote.article ?? null,
+                        remote.description ?? null,
+                        remote.property_number ?? null,
+                        remote.accountable_officer ?? null,
+                        remote.unit_of_measure ?? null,
+                        remote.unit_value ?? null,
+                        remote.rpc_type ?? null,
+                        remote.condition?.ConditionName ?? null,
+                        clientUuid,
+                    ]
+                )
+            );
+        } catch (e) {
+            console.warn('[ScanQueue] Refresh asset details failed:', e);
+        }
     }
 
     async markFailed(clientUuid: string, errorMessage: string): Promise<void> {
@@ -505,59 +584,7 @@ class ScanQueueService {
     }
 
     async reconcileSyncedScans(cycleId: number): Promise<number> {
-        try {
-            const remoteDetailIds = await this.fetchRemoteInventoryDetailIds(cycleId);
-            const syncedScans = await this.getAllScans(cycleId);
-            let removed = 0;
-
-            const syncedOnly = syncedScans.filter((s) => s.status === 'synced');
-
-            // Delete stale synced scans (server already doesn't have them → local-only delete)
-            const toDelete: string[] = [];
-            for (const scan of syncedOnly) {
-                const isRemote = remoteDetailIds.has(scan.inventory_detail_id);
-
-                if (!isRemote) {
-                    toDelete.push(scan.client_uuid);
-                }
-            }
-
-            // Execute all deletes in parallel — localOnly:true skips the remote DELETE call
-            // entirely (we already know the server doesn't have these). Eliminates 404 warnings.
-            if (toDelete.length > 0) {
-                await Promise.all(toDelete.map((uuid) => this.deleteScan(uuid, true)));
-                // Small delay to ensure SQLite writes are persisted
-                await new Promise((r) => setTimeout(r, 50));
-                removed = toDelete.length;
-            }
-
-            return removed;
-        } catch (error) {
-            console.error('[Reconcile] Error during reconciliation:', error);
-            return 0;
-        }
-    }
-
-    private async fetchRemoteInventoryDetailIds(cycleId: number): Promise<Set<number>> {
-        const inventoryDetailIds = new Set<number>();
-        let page = 1;
-        let lastPage = 1;
-
-        do {
-            const response = await ApiService.getRpcInventoryCycleScans(cycleId, {
-                page,
-                per_page: 100,
-            });
-
-            for (const scan of response.data) {
-                inventoryDetailIds.add(scan.inventory_detail_id);
-            }
-
-            lastPage = response.last_page || 1;
-            page += 1;
-        } while (page <= lastPage);
-
-        return inventoryDetailIds;
+        return 0;
     }
 
     async getQueueStats(cycleId?: number): Promise<QueueStats> {
@@ -568,47 +595,33 @@ class ScanQueueService {
             failed: number | null;
         }
 
-        if (typeof cycleId === 'number') {
-            const stats = await this.runWithDatabase((db) =>
-                db.getAllAsync<StatsRow>(
-                    `SELECT
-        COUNT(*) as total,
-        SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending,
-        SUM(CASE WHEN status = 'synced' THEN 1 ELSE 0 END) as synced,
-        SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed
-      FROM scan_queue WHERE cycle_id = ?`,
-                    [cycleId]
-                )
-            );
-            if (stats && stats.length > 0) {
-                return {
-                    total: stats[0].total || 0,
-                    pending: stats[0].pending || 0,
-                    synced: stats[0].synced || 0,
-                    failed: stats[0].failed || 0,
-                };
-            }
-        } else {
-            const stats = await this.runWithDatabase((db) =>
-                db.getAllAsync<StatsRow>(
-                    `SELECT
-        COUNT(*) as total,
-        SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending,
-        SUM(CASE WHEN status = 'synced' THEN 1 ELSE 0 END) as synced,
-        SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed
-      FROM scan_queue`,
-                    []
-                )
-            );
+        const hasCycleId = typeof cycleId === 'number' && cycleId > 0;
+        const query = hasCycleId
+            ? `SELECT
+                COUNT(*) as total,
+                SUM(CASE WHEN status IN ('pending', 'syncing') THEN 1 ELSE 0 END) as pending,
+                SUM(CASE WHEN status = 'synced' THEN 1 ELSE 0 END) as synced,
+                SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed
+               FROM scan_queue WHERE cycle_id = ?`
+            : `SELECT
+                COUNT(*) as total,
+                SUM(CASE WHEN status IN ('pending', 'syncing') THEN 1 ELSE 0 END) as pending,
+                SUM(CASE WHEN status = 'synced' THEN 1 ELSE 0 END) as synced,
+                SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed
+               FROM scan_queue`;
 
-            if (stats && stats.length > 0) {
-                return {
-                    total: stats[0].total || 0,
-                    pending: stats[0].pending || 0,
-                    synced: stats[0].synced || 0,
-                    failed: stats[0].failed || 0,
-                };
-            }
+        const params = hasCycleId ? [cycleId] : [];
+
+        const stats = await this.runWithDatabase((db) =>
+            db.getAllAsync<StatsRow>(query, params)
+        );
+
+        if (stats && stats.length > 0) {
+            const pending = Number(stats[0].pending) || 0;
+            const synced = Number(stats[0].synced) || 0;
+            const failed = Number(stats[0].failed) || 0;
+            const total = synced + pending + failed;
+            return { total, pending, synced, failed };
         }
 
         return { total: 0, pending: 0, synced: 0, failed: 0 };

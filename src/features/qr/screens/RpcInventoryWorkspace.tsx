@@ -19,7 +19,7 @@ import { RpcInventoryReportScreen } from './RpcInventoryReportScreen';
 import { RpcInventoryAuditScreen } from './RpcInventoryAuditScreen';
 
 type TabType = 'cycles' | 'scanner' | 'assets' | 'report' | 'audit';
-const REFRESH_INTERVAL_MS = 10000;
+const REFRESH_INTERVAL_MS = 60000;
 
 interface RpcInventoryWorkspaceProps {
     initialCycleId?: number;
@@ -63,20 +63,7 @@ export function RpcInventoryWorkspace({
                 setActiveTab('cycles');
             }
         } catch (error) {
-            console.error('Failed to load RPC cycles:', error);
-            // Provide a clearer hint when network errors occur (common on devices/emulators)
-            // so developers/users can check their `EXPO_PUBLIC_API_URL` and network.
-            // Avoid using too many alerts in prod — this helps local dev debugging.
-            // Normalize the caught error to `any` so we can inspect `message` safely.
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const errAny: any = error;
-            const isNetwork = (errAny && errAny.message && String(errAny.message).toLowerCase().includes('network')) || false;
-            if (isNetwork) {
-                Alert.alert(
-                    'Network Error',
-                    'Failed to reach backend API. Check EXPO_PUBLIC_API_URL in .env.local and ensure the device/emulator can reach your machine.'
-                );
-            }
+            console.warn('[Workspace] Offline or backend unreachable — using cached cycle data');
         } finally {
             setLoadingCycles(false);
         }
