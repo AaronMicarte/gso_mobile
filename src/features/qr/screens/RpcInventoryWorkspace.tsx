@@ -12,6 +12,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { RpcCycle } from '../../../types';
 import { useAuth } from '../../auth/providers/AuthProvider';
 import ApiService from '../../shared/services/apiService';
+import AuthService from '../../auth/services/authService';
 import { CycleSelectScreen } from './CycleSelectScreen';
 import ScannerScreen from './ScannerScreen';
 import { ScannedAssetsScreen } from './ScannedAssetsScreen';
@@ -34,6 +35,34 @@ export function RpcInventoryWorkspace({
     const [activeTab, setActiveTab] = useState<TabType>('cycles');
     const [cycleInfo, setCycleInfo] = useState<RpcCycle | null>(null);
     const [loadingCycles, setLoadingCycles] = useState(true);
+    const [bootstrapped, setBootstrapped] = useState(false);
+
+    // On mount: if we have no cycle yet, try the cached one from SecureStore.
+    // This lets the workspace open the scanner even when offline.
+    useEffect(() => {
+        let cancelled = false;
+        const bootstrap = async () => {
+            if (selectedCycleId) {
+                setBootstrapped(true);
+                return;
+            }
+            try {
+                const cached = await AuthService.getSecureItem('last_active_cycle_id');
+                if (!cancelled && cached) {
+                    setSelectedCycleId(Number(cached));
+                    setActiveTab('scanner');
+                }
+            } catch {
+                /* ignore */
+            }
+            if (!cancelled) setBootstrapped(true);
+        };
+        void bootstrap();
+        return () => {
+            cancelled = true;
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const refreshCycles = useCallback(async (): Promise<void> => {
         setLoadingCycles(true);
@@ -57,6 +86,11 @@ export function RpcInventoryWorkspace({
                 setSelectedCycleId(selectedCycle.id);
                 setCycleInfo(selectedCycle);
                 setActiveTab('scanner');
+                try {
+                    await AuthService.setSecureItem('last_active_cycle_id', String(selectedCycle.id));
+                } catch {
+                    /* ignore */
+                }
             } else {
                 setSelectedCycleId(null);
                 setCycleInfo(null);
@@ -98,6 +132,7 @@ export function RpcInventoryWorkspace({
             });
         setSelectedCycleId(cycleId);
         setActiveTab('scanner');
+        void AuthService.setSecureItem('last_active_cycle_id', String(cycleId));
     };
 
     const handleBackToCycles = () => {
@@ -106,7 +141,7 @@ export function RpcInventoryWorkspace({
         setActiveTab('cycles');
     };
 
-    if (loadingCycles && !selectedCycleId) {
+    if (loadingCycles && !selectedCycleId && !bootstrapped) {
         return (
             <View style={styles.loadingContainer}>
                 <ActivityIndicator size="large" color="#2563EB" />
@@ -118,6 +153,7 @@ export function RpcInventoryWorkspace({
     if (!selectedCycleId) {
         return <CycleSelectScreen onSelectCycle={handleSelectCycle} />;
     }
+
     return (
         <View style={styles.container}>
             <View style={styles.header}>
@@ -145,7 +181,6 @@ export function RpcInventoryWorkspace({
                 </View>
             </View>
 
-            {/* Content */}
             <View style={styles.content}>
                 {cycleInfo?.status === 'closed' ? (
                     <View style={styles.closedContainer}>
@@ -178,7 +213,6 @@ export function RpcInventoryWorkspace({
                 )}
             </View>
 
-            {/* Tabs */}
             <View style={styles.bottomDock}>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabScroll}>
                     {[

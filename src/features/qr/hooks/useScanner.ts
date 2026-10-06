@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert } from 'react-native';
 import { Camera, BarcodeScanningResult } from 'expo-camera';
 import { useFocusEffect } from '@react-navigation/native';
+import * as Network from 'expo-network';
 import ApiService from '../../shared/services/apiService';
 import ScanQueueService from '../../inventory/services/scanQueueService';
 import AuthService from '../../auth/services/authService';
@@ -128,11 +129,8 @@ export function useScanner(cycleId: number): UseScannerResult {
     const [loading, setLoading] = useState(false);
     const [queueStats, setQueueStats] = useState({ synced: 0, failed: 0, total: 0, pending: 0 });
 
-    // Prevents the same QR from hammering the API when the camera is still in frame
     const lastScanRef = useRef<{ value: string; at: number } | null>(null);
-    // Global throttle: max one decode per 700ms
     const scanThrottleRef = useRef(0);
-    // Prevents the "Already scanned" Alert from spamming on the same property
     const lastBlockedRef = useRef<{ key: string; at: number } | null>(null);
 
     const updateQueueStats = useCallback(async () => {
@@ -188,12 +186,73 @@ export function useScanner(cycleId: number): UseScannerResult {
         }, [updateQueueStats])
     );
 
-    // FIX #1 continued: reconcileSyncedScans is now only called here (manual refresh).
-    // This keeps the heavy network call out of the hot scan path.
     const refreshScanner = useCallback(async (): Promise<void> => {
         await ScanQueueService.reconcileSyncedScans(cycleId);
         await Promise.all([loadConditions(), updateQueueStats()]);
     }, [cycleId, loadConditions, updateQueueStats]);
+
+    /**
+     * Shared offline handler. Called when we already know the device is offline,
+     * or when a network error is thrown from previewScan. Opens the modal immediately
+     * with placeholder asset data, no network wait.
+     */
+    async function handleOfflineScan(qrData: string, currentCycleId: number, now: number): Promise<void> {
+        const parsed = parseQrPayload(qrData);
+        const isAlreadyInQueue = await ScanQueueService.isAlreadyScanned(currentCycleId, parsed);
+
+        if (isAlreadyInQueue) {
+            const key = String(parsed.propertyNumber);
+            const lastBlocked = lastBlockedRef.current;
+            if (!lastBlocked || lastBlocked.key !== key || now - lastBlocked.at > 3000) {
+                lastBlockedRef.current = { key, at: now };
+                Alert.alert(
+                    'Already scanned',
+                    `Property #${parsed.propertyNumber} has already been scanned in this cycle (queued locally).`
+                );
+            }
+            setTimeout(() => setScanned(false), 800);
+            setLoading(false);
+            return;
+        }
+
+        const resolvedCondition = selectedCondition ?? conditions[0]?.ConditionID ?? 1;
+        const offlineDetailId = parsed.inventoryDetailId ?? 0;
+        const offlineAsset: any = {
+            inventory_detail_id: offlineDetailId,
+            property_id: parsed.propertyId,
+            property_number: parsed.propertyNumber,
+            article: 'Property Item',
+            description: `Offline scan: ${parsed.propertyNumber}`,
+            condition_id: resolvedCondition,
+            unit_of_measure: 'unit',
+            unit_value: 0,
+            accountable_officer: 'Unknown (Offline)',
+            rpc_type: 'RPCPPE',
+        };
+
+        const offlineCandidate = {
+            inventory_detail_id: offlineDetailId,
+            property_id: parsed.propertyId,
+            property_number: parsed.propertyNumber,
+            is_scanned: false,
+            existing_scan_id: null,
+        };
+
+        setPreview({
+            qr_value: qrData,
+            cycle_id: currentCycleId,
+            asset: offlineAsset,
+            already_scanned: false,
+            existing_scan_id: null,
+            group_total_count: 1,
+            group_scanned_count: 0,
+            group_remaining_count: 1,
+            candidates: [offlineCandidate],
+        });
+        setSelectedInventoryDetailIds([offlineDetailId]);
+        setSelectedCondition(resolvedCondition);
+        setLoading(false);
+    }
 
     async function onBarcodeScanned(result: BarcodeScanningResult): Promise<void> {
         if (scanned || !cycleId) return;
@@ -204,7 +263,7 @@ export function useScanner(cycleId: number): UseScannerResult {
         if (now - scanThrottleRef.current < 700) return;
         scanThrottleRef.current = now;
 
-        // Same QR within 2s → drop BEFORE network call (no lag, no spam)
+        // Same QR within 2s → drop BEFORE network call
         const last = lastScanRef.current;
         if (last && last.value === result.data && now - last.at < 2000) {
             return;
@@ -214,10 +273,25 @@ export function useScanner(cycleId: number): UseScannerResult {
         setScanned(true);
         setLoading(true);
 
+        // FAST OFFLINE CHECK — skip the network entirely when offline so the modal
+        // opens in ~1 second instead of waiting for the axios timeout.
+        let isOffline = false;
+        try {
+            const net = await Network.getNetworkStateAsync();
+            isOffline = !net.isConnected;
+        } catch {
+            // If the check fails, fall through and let axios try
+        }
+
+        if (isOffline) {
+            await handleOfflineScan(result.data, cycleId, now);
+            return;
+        }
+        // END FAST OFFLINE CHECK
+
         try {
             const response = await ApiService.previewScan(cycleId, result.data);
 
-            // 👇 if there is nothing left to scan, just message + bail (no modal)
             const unscannedIds = response.candidates
                 .filter((candidate) => !candidate.is_scanned)
                 .map((candidate) => candidate.inventory_detail_id);
@@ -233,7 +307,6 @@ export function useScanner(cycleId: number): UseScannerResult {
                 const key = String(propertyLabel);
                 const lastBlocked = lastBlockedRef.current;
 
-                // Only show the message once per property within 3 seconds
                 if (!lastBlocked || lastBlocked.key !== key || now - lastBlocked.at > 3000) {
                     lastBlockedRef.current = { key, at: now };
                     Alert.alert(
@@ -242,10 +315,9 @@ export function useScanner(cycleId: number): UseScannerResult {
                     );
                 }
 
-                // Keep camera off briefly so we don't immediately re-trigger on the same QR
                 setTimeout(() => setScanned(false), 800);
                 setLoading(false);
-                return; // no setPreview → no modal
+                return;
             }
 
             const defaultSelection = unscannedIds.includes(response.asset.inventory_detail_id)
@@ -271,59 +343,7 @@ export function useScanner(cycleId: number): UseScannerResult {
                 (typeof err?.message === 'string' && err.message.toLowerCase().includes('network'));
 
             if (isNetworkError) {
-                const parsed = parseQrPayload(result.data);
-                const isAlreadyInQueue = await ScanQueueService.isAlreadyScanned(cycleId, parsed);
-                if (isAlreadyInQueue) {
-                    const key = String(parsed.propertyNumber);
-                    const lastBlocked = lastBlockedRef.current;
-                    if (!lastBlocked || lastBlocked.key !== key || now - lastBlocked.at > 3000) {
-                        lastBlockedRef.current = { key, at: now };
-                        Alert.alert(
-                            'Already scanned',
-                            `Property #${parsed.propertyNumber} has already been scanned in this cycle (queued locally).`
-                        );
-                    }
-                    setTimeout(() => setScanned(false), 800);
-                    setLoading(false);
-                    return;
-                }
-
-                const resolvedCondition = selectedCondition ?? conditions[0]?.ConditionID ?? 1;
-                const offlineDetailId = parsed.inventoryDetailId ?? 0;
-                const offlineAsset: any = {
-                    inventory_detail_id: offlineDetailId,
-                    property_id: parsed.propertyId,
-                    property_number: parsed.propertyNumber,
-                    article: 'Property Item',
-                    description: `Offline scan: ${parsed.propertyNumber}`,
-                    condition_id: resolvedCondition,
-                    unit_of_measure: 'unit',
-                    unit_value: 0,
-                    accountable_officer: 'Unknown (Offline)',
-                    rpc_type: 'RPCPPE',
-                };
-
-                const offlineCandidate = {
-                    inventory_detail_id: offlineDetailId,
-                    property_id: parsed.propertyId,
-                    property_number: parsed.propertyNumber,
-                    is_scanned: false,
-                    existing_scan_id: null,
-                };
-
-                setPreview({
-                    qr_value: result.data,
-                    cycle_id: cycleId,
-                    asset: offlineAsset,
-                    already_scanned: false,
-                    existing_scan_id: null,
-                    group_total_count: 1,
-                    group_scanned_count: 0,
-                    group_remaining_count: 1,
-                    candidates: [offlineCandidate],
-                });
-                setSelectedInventoryDetailIds([offlineDetailId]);
-                setSelectedCondition(resolvedCondition);
+                await handleOfflineScan(result.data, cycleId, now);
                 return;
             }
 
@@ -350,6 +370,20 @@ export function useScanner(cycleId: number): UseScannerResult {
         setScanned(true);
         setLoading(true);
 
+        // FAST OFFLINE CHECK for manual too
+        let isOffline = false;
+        try {
+            const net = await Network.getNetworkStateAsync();
+            isOffline = !net.isConnected;
+        } catch {
+            /* ignore */
+        }
+
+        if (isOffline) {
+            await handleOfflineScan(qrValue, cycleId, Date.now());
+            return;
+        }
+
         try {
             const response = await ApiService.previewScan(cycleId, qrValue, { property_number: qrValue });
 
@@ -357,7 +391,6 @@ export function useScanner(cycleId: number): UseScannerResult {
                 .filter((candidate) => !candidate.is_scanned)
                 .map((candidate) => candidate.inventory_detail_id);
 
-            // 👇 same already-scanned guard for manual input (no modal)
             if (unscannedIds.length === 0) {
                 const first = response.candidates?.[0];
                 const propertyLabel =
@@ -380,7 +413,7 @@ export function useScanner(cycleId: number): UseScannerResult {
 
                 setScanned(false);
                 setLoading(false);
-                return; // no setPreview → no modal
+                return;
             }
 
             const defaultSelection = unscannedIds.includes(response.asset.inventory_detail_id)
@@ -406,60 +439,7 @@ export function useScanner(cycleId: number): UseScannerResult {
                 (typeof err?.message === 'string' && err.message.toLowerCase().includes('network'));
 
             if (isNetworkError) {
-                const parsed = parseQrPayload(qrValue);
-                const isAlreadyInQueue = await ScanQueueService.isAlreadyScanned(cycleId, parsed);
-                if (isAlreadyInQueue) {
-                    const key = String(parsed.propertyNumber);
-                    const now = Date.now();
-                    const lastBlocked = lastBlockedRef.current;
-                    if (!lastBlocked || lastBlocked.key !== key || now - lastBlocked.at > 3000) {
-                        lastBlockedRef.current = { key, at: now };
-                        Alert.alert(
-                            'Already scanned',
-                            `Property #${parsed.propertyNumber} has already been scanned in this cycle (queued locally).`
-                        );
-                    }
-                    setScanned(false);
-                    setLoading(false);
-                    return;
-                }
-
-                const resolvedCondition = selectedCondition ?? conditions[0]?.ConditionID ?? 1;
-                const offlineDetailId = parsed.inventoryDetailId ?? 0;
-                const offlineAsset: any = {
-                    inventory_detail_id: offlineDetailId,
-                    property_id: parsed.propertyId,
-                    property_number: parsed.propertyNumber,
-                    article: 'Property Item',
-                    description: `Offline manual scan: ${parsed.propertyNumber}`,
-                    condition_id: resolvedCondition,
-                    unit_of_measure: 'unit',
-                    unit_value: 0,
-                    accountable_officer: 'Unknown (Offline)',
-                    rpc_type: 'RPCPPE',
-                };
-
-                const offlineCandidate = {
-                    inventory_detail_id: offlineDetailId,
-                    property_id: parsed.propertyId,
-                    property_number: parsed.propertyNumber,
-                    is_scanned: false,
-                    existing_scan_id: null,
-                };
-
-                setPreview({
-                    qr_value: qrValue,
-                    cycle_id: cycleId,
-                    asset: offlineAsset,
-                    already_scanned: false,
-                    existing_scan_id: null,
-                    group_total_count: 1,
-                    group_scanned_count: 0,
-                    group_remaining_count: 1,
-                    candidates: [offlineCandidate],
-                });
-                setSelectedInventoryDetailIds([offlineDetailId]);
-                setSelectedCondition(resolvedCondition);
+                await handleOfflineScan(qrValue, cycleId, Date.now());
                 return;
             }
 

@@ -270,7 +270,7 @@ function QueueScreen(): React.JSX.Element {
     const interval = setInterval(() => {
       void loadScans();
       void loadCycleStatus();
-    }, 5000);
+    }, 3000);
 
     return () => clearInterval(interval);
   }, [loadScans, loadCycleStatus]);

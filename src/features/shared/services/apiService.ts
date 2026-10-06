@@ -20,7 +20,7 @@ import {
 } from '../../../types';
 
 const DEFAULT_API_BASE_URL = 'http://localhost:8000/api';
-const DEFAULT_API_TIMEOUT_MS = 15000;
+const DEFAULT_API_TIMEOUT_MS = 8000;
 
 function resolveApiBaseUrl(): string {
   const configuredUrl = process.env.EXPO_PUBLIC_API_URL?.trim();
